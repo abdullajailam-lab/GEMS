@@ -5529,6 +5529,117 @@ ACT.ttTPick = d => { S.ttTeacher = d.v; render(); };
   };
 })();
 
+/* ==================== More: file-based options. Import student levels (match by name); Distribute from file (match by name to teacher). ==================== */
+const normName = v => String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toLowerCase();
+async function fileRows(f) {
+  if (/\.xlsx$/i.test(f.name)) return firstSheetRows(await unzipEntries(await f.arrayBuffer()));
+  const text = await f.text();
+  const sep = text.indexOf('\t') >= 0 ? '\t' : ',';
+  return text.split(/\r?\n/).filter(l => l.trim()).map(l => l.split(sep).map(c => c.replace(/^"|"$/g, '').trim()));
+}
+/* Find the header row, the name column and the value column (level, or teacher) */
+function fileColumns(rows, valuePattern) {
+  const hi = rows.findIndex(r => r.some(c => /name/i.test(String(c || '')) && !/dhivehi|parent|guardian|mother|father|ދ/i.test(String(c || ''))));
+  if (hi < 0) return null;
+  const hdr = rows[hi].map(c => String(c || ''));
+  const nameCol = hdr.findIndex(h => /name/i.test(h) && !/dhivehi|parent|guardian|mother|father/i.test(h));
+  const valCol = hdr.findIndex(h => valuePattern.test(h));
+  return { hi, nameCol, valCol };
+}
+function matchFile(rows, valuePattern, lookupValue) {
+  const cols = fileColumns(rows, valuePattern);
+  if (!cols || cols.valCol < 0) return { error: 'The file needs a name column and a ' + (valuePattern.source.includes('teacher') ? 'teacher' : 'level') + ' column.' };
+  const matched = [], notFound = [];
+  rows.slice(cols.hi + 1).forEach(r => {
+    const name = String(r[cols.nameCol] || '').trim();
+    const val = String(r[cols.valCol] || '').trim();
+    if (!name || !val) return;
+    const st = DB.students.find(s => normName(s.name) === normName(name));
+    if (!st) { notFound.push(name); return; }
+    const lookup = lookupValue(val);
+    if (lookup === null) { notFound.push(name + ' (' + val + ')'); return; }
+    matched.push({ sid: st.id, name: st.name, value: lookup.value, label: lookup.label });
+  });
+  return { matched, notFound };
+}
+function resultCard(r, applyAct, label) {
+  if (r.error) return `<div class="card"><div class="sub" style="color:#A52E2E">${esc(r.error)}</div></div>`;
+  return `<div class="card" style="margin-top:12px">
+    <div class="f" style="margin-top:0">${r.matched.length} student${r.matched.length === 1 ? '' : 's'} matched by name</div>
+    <div class="sub" style="margin:6px 0 8px">${r.matched.slice(0, 40).map(m => esc(m.name) + ' → ' + esc(m.label)).join('<br>') || 'No names matched.'}</div>
+    ${r.notFound.length ? `<div class="sub" style="margin-top:8px;color:#8A5B07">Not found in the app (${r.notFound.length}): ${r.notFound.slice(0, 20).map(esc).join(', ')}</div>` : ''}
+    <div class="row" style="margin-top:12px"><button class="btn full" data-a="${applyAct}" ${r.matched.length ? '' : 'disabled'}>${esc(label)}</button></div>
+  </div>`;
+}
+function vLevelsFile() {
+  return `<div class="between"><h1>Import student levels</h1></div>
+  <div class="sub">Upload a file with each student's name and level. Names that match a student get that level.</div>
+  <div class="card" style="margin-top:12px"><label class="btn full" style="cursor:pointer;text-align:center">${ico('up', 18)}Choose file<input type="file" accept=".xlsx,.csv,.tsv,.txt" data-a="lfFile" hidden></label></div>
+  ${S.lf ? resultCard(S.lf, 'lfApply', 'Set levels for ' + S.lf.matched.length + ' students') : ''}`;
+}
+function vDistFile() {
+  return `<div class="between"><h1>Distribute from file</h1></div>
+  <div class="sub">Upload a file with each student's name and their teacher. Names that match a student get that teacher.</div>
+  <div class="card" style="margin-top:12px"><label class="btn full" style="cursor:pointer;text-align:center">${ico('up', 18)}Choose file<input type="file" accept=".xlsx,.csv,.tsv,.txt" data-a="dfFile" hidden></label></div>
+  ${S.df ? resultCard(S.df, 'dfApply', 'Assign ' + S.df.matched.length + ' students to their teachers') : ''}`;
+}
+Object.assign(ACT, {
+  lfApply: () => {
+    (S.lf && S.lf.matched || []).forEach(m => { const st = DB.students.find(x => x.id === m.sid); if (st) st.acad = m.value; });
+    save(); toast('Levels set for ' + ((S.lf && S.lf.matched.length) || 0) + ' students'); S.lf = null; render();
+  },
+  dfApply: () => {
+    (S.df && S.df.matched || []).forEach(m => { const st = DB.students.find(x => x.id === m.sid); if (st) st.tch = m.value; });
+    save(); toast('Students assigned to teachers'); S.df = null; render();
+  }
+});
+Object.assign(CHANGE, {
+  lfFile: async el => {
+    const f = el.files && el.files[0]; if (!f) return;
+    try {
+      const rows = await fileRows(f);
+      S.lf = matchFile(rows, /academic|level|class|grade/i, v => ({ value: v, label: v }));
+    } catch (e) { S.lf = { error: 'Could not read that file. Try a .xlsx or .csv file.' }; }
+    render();
+  },
+  dfFile: async el => {
+    const f = el.files && el.files[0]; if (!f) return;
+    try {
+      const rows = await fileRows(f);
+      S.df = matchFile(rows, /teacher/i, v => {
+        const t = DB.teachers.find(x => normName(x.name) === normName(v));
+        return t ? { value: t.id, label: t.name } : null;
+      });
+    } catch (e) { S.df = { error: 'Could not read that file. Try a .xlsx or .csv file.' }; }
+    render();
+  }
+});
+(function () {
+  const prevRoute = routeMain;
+  routeMain = function () {
+    const c = cur() || '';
+    if (c === 'levelsFile') return vLevelsFile();
+    if (c === 'distFile') return vDistFile();
+    return prevRoute();
+  };
+  Object.assign(TOP_TITLE, { levelsFile: 'Import student levels', distFile: 'Distribute from file' });
+  const prevMore = vMore;
+  vMore = function () {
+    const drop = ['Student distribution', 'Import student levels', 'Import from photo'];
+    const parts = prevMore().split('<div class="li"');
+    let out = parts[0];
+    for (let i = 1; i < parts.length; i++) {
+      const p = parts[i];
+      if (!drop.some(t => p.includes('<b>' + t + '</b>'))) out += '<div class="li"' + p;
+    }
+    const rows = [
+      ['levelsFile', 'doc', 'Import student levels', 'Upload a file; each matching name gets its level'],
+      ['distFile', 'grid', 'Distribute from file', 'Upload a file with teachers; each matching name gets its teacher']
+    ].map(([v, i, t, d]) => `<div class="li" data-a="stack" data-v="${v}"><div class="ico">${ico(i, 20)}</div><div class="grow"><b>${t}</b><div class="sub">${d}</div></div>${ico('chev', 18)}</div>`).join('');
+    return out.replace('<div class="card">', '<div class="card">' + rows);
+  };
+})();
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
