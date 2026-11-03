@@ -798,6 +798,9 @@ body #splash::before{display:block!important;background-image:url("data:image/sv
 .tt-corner{position:sticky;left:0;z-index:3;min-width:96px}
 .tt-teach td textarea{width:100%;min-width:130px;border:0;resize:vertical;font-size:12px;line-height:1.35;background:transparent;padding:4px;min-height:80px}
 .tt-teach td textarea:focus{outline:2px solid var(--cyan);border-radius:6px}
+/* Locked until sign-in: only the sign-in board shows */
+body.locked nav{display:none!important}
+body.locked .top .me{display:none!important}
 </style>
 </head>
 
@@ -5261,6 +5264,107 @@ function vCloudBuiltin() {
     // show the account (sign-in / sync) card and the built-in connection status; the URL and key boxes are no longer shown
     return vCloudAccount() + vCloudBuiltin();
   };
+})();
+
+/* ==================== Live sync (automatic), sign-in after the opening, shared data for all teachers, attendance Save ==================== */
+let sbPushTimer = null, sbPulling = false;
+function sbActive() { return !!(sbSession() && sbBase() && sbKey()); }
+const sbSaveLocal = save;                         // the plain save on this device
+function sbPushSoon() { if (!sbActive() || sbPulling) return; clearTimeout(sbPushTimer); sbPushTimer = setTimeout(() => { sbPushAll().catch(() => { }); }, 1200); }
+save = function () { sbSaveLocal(); sbPushSoon(); };   // every change is saved here and sent to the cloud
+async function sbPushAll() {
+  if (!sbActive()) return;
+  await sbUpsert('gems_teachers', DB.teachers.map(t => ({ id: t.id, name: t.name, role: t.role || '' })), 'id');
+  await sbUpsert('gems_groups', DB.classes.map(g => ({ id: g.id, name: g.name, teacher_id: g.tch || '' })), 'id');
+  await sbUpsert('gems_students', DB.students.map(sbStudentRow), 'id');
+  const att = [];
+  Object.keys(DB.att || {}).forEach(k => { const [date, cls] = k.split('|'); Object.keys(DB.att[k]).forEach(sid => att.push({ date, class_id: cls, student_id: sid, status: DB.att[k][sid] })); });
+  await sbUpsert('gems_attendance', att, 'date,class_id,student_id');
+  DB.cloudSyncedAt = new Date().toISOString(); sbSaveLocal();
+}
+async function sbPullAll() {
+  if (!sbActive()) return;
+  sbPulling = true;
+  try {
+    const [teachers, groups, students, attRows] = await Promise.all([
+      sbReq('/rest/v1/gems_teachers?select=*'), sbReq('/rest/v1/gems_groups?select=*'),
+      sbReq('/rest/v1/gems_students?select=*'), sbReq('/rest/v1/gems_attendance?select=*')]);
+    const mergeById = (list, rows, fromRow) => { (rows || []).forEach(r => { const i = list.findIndex(x => x.id === r.id); const o = fromRow(r); if (i >= 0) list[i] = o; else list.push(o); }); };
+    mergeById(DB.teachers, teachers, r => ({ id: r.id, name: r.name, role: r.role || '' }));
+    mergeById(DB.classes, groups, r => ({ id: r.id, name: r.name, tch: r.teacher_id || '' }));
+    mergeById(DB.students, students, sbStudentFromRow);
+    (attRows || []).forEach(r => { const k = r.date + '|' + r.class_id; DB.att[k] = DB.att[k] || {}; DB.att[k][r.student_id] = r.status; });
+    DB.cloudSyncedAt = new Date().toISOString(); sbSaveLocal();
+  } finally { sbPulling = false; }
+}
+/* Pull new data every 30 seconds while the app is open (without disturbing typing) */
+setInterval(() => {
+  if (!sbActive() || document.visibilityState === 'hidden') return;
+  sbPullAll().then(() => { const a = document.activeElement; if (!a || a.tagName === 'BODY') render(); }).catch(() => { });
+}, 30000);
+/* After the opening: teachers sign in first; signed-in teachers get the latest data */
+setTimeout(() => {
+  if (!sbSession()) { S.stack = ['signin']; render(); return; }
+  sbPullAll().then(() => render()).catch(() => { });
+}, 4300);
+function vSignInPage() {
+  return `<div class="between"><h1>Teacher sign-in</h1></div><div class="sub" style="margin-bottom:12px">Sign in to see your GEMS data. Your data is kept up to date automatically.</div>${vCloudAccount()}`;
+}
+(function () {
+  const prevRoute = routeMain;
+  routeMain = function () { if ((cur() || '') === 'signin') return vSignInPage(); return prevRoute(); };
+  Object.assign(TOP_TITLE, { signin: 'Sign in' });
+  const origIn = ACT.sbSignIn;
+  ACT.sbSignIn = async d => { await origIn(d); if (sbSession()) { S.stack = []; await sbPullAll().catch(() => { }); render(); } };
+  const origUp = ACT.sbSignUp;
+  ACT.sbSignUp = async d => { await origUp(d); if (sbSession()) { S.stack = []; render(); } };
+  ACT.sbSignOut = () => { try { localStorage.removeItem(SB_SESSION_KEY); } catch (e) { } S.stack = ['signin']; toast('Signed out'); render(); };
+  ACT.sbSync = () => { sbPushAll().then(() => { toast('Saved to the cloud'); render(); }).catch(e => toast('Cloud: ' + e.message)); };
+  // shown when signed in: no manual sync button, just status
+  vCloudAccount = function () {
+    const sess = sbSession();
+    if (!sess) return `<div class="card"><div class="f" style="margin-top:0">Teacher sign-in</div>
+      <div class="sub" style="margin:4px 0 8px">Each teacher signs in with their own email.</div>
+      <label class="f">Email<input id="sb_email" type="email" autocomplete="email"></label>
+      <label class="f">Password<input id="sb_pass" type="password" autocomplete="current-password"></label>
+      <div class="row" style="margin-top:10px"><button class="btn sm" data-a="sbSignIn">Sign in</button><button class="btn ghost sm" data-a="sbSignUp">Create account</button></div>
+      <div id="sbStatus" class="sub" style="margin-top:10px"></div></div>`;
+    return `<div class="card"><div class="f" style="margin-top:0">Signed in</div><div class="sub" style="margin:4px 0 8px">${esc(sess.email)}</div>
+      <div class="sub">Live sync is on. Changes are saved to the cloud automatically.</div>
+      <div class="row" style="margin-top:10px"><button class="btn ghost sm" data-a="sbSignOut">Sign out</button></div>
+      <div id="sbStatus" class="sub" style="margin-top:10px"></div></div>`;
+  };
+  // attendance: explicit Save button (also saves to the cloud)
+  ACT.attSave = () => {
+    sbSaveLocal();
+    if (!sbActive()) return toast('Attendance saved on this device');
+    sbPushAll().then(() => toast('Attendance saved to the cloud')).catch(e => toast('Saved on this device. Cloud: ' + e.message));
+  };
+  const prevAtt = vAttend;
+  vAttend = function () {
+    return prevAtt() + `<div class="row" style="margin-top:14px"><button class="btn full" data-a="attSave">${ico('check', 18)}Save attendance</button></div>`;
+  };
+})();
+
+/* ==================== Before sign-in: only the sign-in board. After sign-in: the whole app. ==================== */
+(function () {
+  const prevRoute = routeMain;
+  routeMain = function () {
+    if (!sbSession()) { document.body.classList.add('locked'); S.stack = ['signin']; return vSignInPage(); }
+    document.body.classList.remove('locked');
+    if ((cur() || '') === 'signin') { S.stack = []; }
+    return prevRoute();
+  };
+  vSignInPage = function () {
+    return `<div class="card" style="margin-top:8px"><div class="f" style="margin-top:0">Teacher sign-in</div>
+      <div class="sub" style="margin:4px 0 8px">Sign in with your email to open GEMS.</div>
+      <label class="f">Email<input id="sb_email" type="email" autocomplete="email"></label>
+      <label class="f">Password<input id="sb_pass" type="password" autocomplete="current-password"></label>
+      <div class="row" style="margin-top:10px"><button class="btn sm" data-a="sbSignIn">Sign in</button><button class="btn ghost sm" data-a="sbSignUp">Create account</button></div>
+      <div id="sbStatus" class="sub" style="margin-top:10px"></div></div>`;
+  };
+  const origOut = ACT.sbSignOut;
+  ACT.sbSignOut = () => { try { localStorage.removeItem(SB_SESSION_KEY); } catch (e) { } S.stack = []; toast('Signed out'); render(); };
 })();
 
 /* ==================== Header, bottom bar, render, start ==================== */
