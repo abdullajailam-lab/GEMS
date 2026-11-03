@@ -5686,6 +5686,79 @@ Object.assign(CHANGE, {
   };
 })();
 
+/* ==================== Teacher timetable: the Distribute button sits right under the By class / By teacher switch ==================== */
+(function () {
+  const btnHtml = `<div class="row" style="margin-top:10px"><button class="btn ghost sm" data-a="ttTDistribute">Distribute students to teachers</button></div>`;
+  const btnTop = `<div class="row" style="margin:0 0 10px"><button class="btn sm" data-a="ttTDistribute">Distribute students to teachers</button></div>`;
+  const prevTT = vTT;
+  vTT = function () {
+    let out = prevTT();
+    if (S.ttView !== 'teacher') return out;
+    out = out.split(btnHtml).join('');
+    const marker = '<div class="chips" style="margin-bottom:10px">';
+    return out.includes(marker) ? out.replace(marker, btnTop + marker) : btnTop + out;
+  };
+})();
+
+/* ==================== Import student levels: easier to find and load the file; clearer messages ==================== */
+const FILE_ACCEPT = '.xlsx,.csv,.tsv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+async function fileRows(f) {
+  const n = (f.name || '').toLowerCase();
+  if (n.endsWith('.xls')) throw new Error('old-xls');
+  if (n.endsWith('.xlsx')) return firstSheetRows(await unzipEntries(await f.arrayBuffer()));
+  const text = (await f.text()).replace(/^\uFEFF/, '');
+  const sep = text.indexOf('\t') >= 0 && text.indexOf(',') < 0 ? '\t' : (text.indexOf('\t') >= 0 && text.split('\n')[0].split('\t').length > text.split('\n')[0].split(',').length ? '\t' : ',');
+  return text.split(/\r?\n/).filter(l => l.trim()).map(l => l.split(sep).map(c => c.replace(/^"|"$/g, '').trim()));
+}
+function fileColumns(rows, valuePattern) {
+  const isName = h => /name|student/i.test(h) && !/dhivehi|parent|guardian|mother|father|teacher/i.test(h);
+  const hi = rows.findIndex(r => r.some(c => isName(String(c || ''))));
+  if (hi < 0) return null;
+  const hdr = rows[hi].map(c => String(c || ''));
+  return { hi, nameCol: hdr.findIndex(isName), valCol: hdr.findIndex(h => valuePattern.test(h)), hdr };
+}
+function matchFile(rows, valuePattern, lookupValue) {
+  const cols = fileColumns(rows, valuePattern);
+  const what = valuePattern.source.includes('teacher') ? 'teacher' : 'level';
+  if (!cols) { const first = (rows[0] || []).filter(Boolean).join(', '); return { error: 'No name column found. The first row must have a heading such as "Name" or "Student". Headings in the file: ' + (first || 'none') + '.' }; }
+  if (cols.valCol < 0) return { error: 'No ' + what + ' column found. Headings in the file: ' + cols.hdr.filter(Boolean).join(', ') + '. Add a heading such as "' + (what === 'level' ? 'Level' : 'Teacher') + '".' };
+  const matched = [], notFound = [];
+  rows.slice(cols.hi + 1).forEach(r => {
+    const name = String(r[cols.nameCol] || '').trim();
+    const val = String(r[cols.valCol] || '').trim();
+    if (!name || !val) return;
+    const st = DB.students.find(s => normName(s.name) === normName(name));
+    if (!st) { notFound.push(name); return; }
+    const lookup = lookupValue(val);
+    if (lookup === null) { notFound.push(name + ' (' + val + ')'); return; }
+    matched.push({ sid: st.id, name: st.name, value: lookup.value, label: lookup.label });
+  });
+  return { matched, notFound };
+}
+function fileErr(e) {
+  if (e && e.message === 'old-xls') return 'This is an old .xls file. Open it and save as .xlsx or .csv, then choose it again.';
+  return 'Could not open that file. Save it as .xlsx or .csv and try again.';
+}
+function vLevelsFile() {
+  const chosen = S.lfName ? `<div class="sub" style="margin-top:8px">File: <b>${esc(S.lfName)}</b></div>` : '';
+  return `<div class="between"><h1>Import student levels</h1></div>
+  <div class="sub">Upload a file with each student's name and level. Names that match a student get that level.</div>
+  <div class="card" style="margin-top:12px"><label class="btn full" style="cursor:pointer;text-align:center">${ico('up', 18)}Choose file<input type="file" accept="${FILE_ACCEPT}" data-a="lfFile" hidden></label>${chosen}
+    <div class="sub" style="margin-top:8px">The first row must have headings: Name (or Student) and Level (or Class / Grade / Performance level).</div></div>
+  ${S.lf ? resultCard(S.lf, 'lfApply', 'Set levels for ' + (S.lf.matched ? S.lf.matched.length : 0) + ' students') : ''}`;
+}
+Object.assign(CHANGE, {
+  lfFile: async el => {
+    const f = el.files && el.files[0]; if (!f) return;
+    S.lfName = f.name; S.lf = null; toast('Reading ' + f.name + '…'); render();
+    try {
+      const rows = await fileRows(f);
+      S.lf = matchFile(rows, /level|class|grade|academic|performance|stage/i, v => ({ value: v, label: v }));
+    } catch (e) { S.lf = { error: fileErr(e) }; }
+    render();
+  }
+});
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
