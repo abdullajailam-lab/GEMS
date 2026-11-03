@@ -1677,12 +1677,6 @@ function vCalendar() {
   <div class="chips">${fl.map(([k, l]) => `<button class="chip ${S.calF === k ? 'on' : ''}" data-a="calF" data-v="${k}">${l}</button>`).join('')}</div>
   <div class="card">${list.length ? list.map(evRow).join('') : '<div class="empty">No events this month.</div>'}</div>
   <div class="sec"><h3>Terms 2026</h3></div><div class="card">${tm}</div>
-  <div class="sec"><h3>Examination series</h3></div>
-  <div class="card">
-    <div class="li" style="cursor:default"><div class="grow"><b>Grade 10 of 2025: SSC and CIE</b><div class="sub">January – March 2026</div></div></div>
-    <div class="li" style="cursor:default"><div class="grow"><b>Grade 10 of 2026: SSC and CIE</b><div class="sub">October – November 2026</div></div></div>
-    <div class="li" style="cursor:default"><div class="grow"><b>Grades 11 and 12: HSC and Edexcel AS, A2</b><div class="sub">October – November 2026</div></div></div>
-    <div class="sub" style="margin-top:8px">Follow the examination timetable of DPE.</div></div>
   <div class="row"><button class="btn" data-a="calPdf">${ico('pdf', 18)}Calendar PDF</button></div>
   <div class="sub" style="margin-top:12px">Source: Ministry of Education, Republic of Maldives, Academic Calendar 2026 (tentative, 10.08.2025). Dates can change, so check official notices.</div>`;
 }
@@ -5418,13 +5412,7 @@ Object.assign(ACT, {
 vAttend = vAttendTeacher;   // the teacher attendance screen replaces the group version (one Save button only)
 
 /* Home: replace the three cards with counts by programme and by learning profile */
-function homeCounts() {
-  const prog = {}; DB.students.forEach(s => { const k = s.program || 'No programme'; prog[k] = (prog[k] || 0) + 1; });
-  const prf = {}; DB.students.forEach(s => profileCats(s).forEach(c => { prf[c] = (prf[c] || 0) + 1; }));
-  const cell = (n, l) => `<div class="kpi"><b>${n}</b><span>${esc(l)}</span></div>`;
-  return `<div class="sec"><h3>Students by programme</h3></div><div class="kpis" style="grid-template-columns:repeat(2,1fr)">${Object.keys(prog).map(k => cell(prog[k], k)).join('') || '<div class="sub">No students yet.</div>'}</div>
-  <div class="sec"><h3>Students by learning profile</h3></div><div class="kpis" style="grid-template-columns:repeat(2,1fr)">${Object.keys(prf).map(k => cell(prf[k], k)).join('') || '<div class="sub">No learning profiles recorded yet.</div>'}</div>`;
-}
+function homeCounts() { return ''; }   // programme and learning-profile counts are no longer shown
 (function () {
   const prevHome = vHome;
   vHome = function () {
@@ -5515,7 +5503,6 @@ ACT.ttTPick = d => { S.ttTeacher = d.v; render(); };
   vMore = function () {
     const ico2 = (i) => ico(i, 20);
     const extra = [
-      ['stack', 'calendar', 'Counts by programme and profile', 'Students per programme and learning profile, with PDF'],
       ['distribute', 'grid', 'Student distribution', 'Share students to your teachers'],
       ['import', 'doc', 'Import student levels', 'Upload a file and set each student\'s academic level'],
       ['import', 'camera', 'Import from photo', 'Take a photo of the student list']
