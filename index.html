@@ -5666,7 +5666,7 @@ Object.assign(CHANGE, {
         const rows = await fileRows(f);
         S.df = matchFile(rows, /teacher/i, v => { const t = DB.teachers.find(x => normName(x.name) === normName(v)); return t ? { value: t.id, label: t.name } : null; });
       } else {
-        S.df = await readTeacherPhotoOrPdf(f);
+        S.df = { error: 'Photos and PDFs cannot be read on this website. Save the list as .xlsx or .csv and attach it again.' };
       }
     } catch (e) { S.df = { error: 'Could not read that file. Try a clear photo, a PDF, .xlsx or .csv.' }; }
     render();
@@ -5679,8 +5679,8 @@ Object.assign(CHANGE, {
     if (S.dkey !== 'none') return html;
     const card = `<div class="card" style="margin-top:12px">
       <div class="f" style="margin-top:0">Attach the student list</div>
-      <div class="sub" style="margin:4px 0 10px">Attach a photo, a PDF, or an .xlsx or .csv file with each student's name and teacher.</div>
-      <label class="btn full" style="cursor:pointer;text-align:center">${ico('up', 18)}Attach photo, PDF or file<input type="file" accept="image/*,application/pdf,.xlsx,.csv,.tsv,.txt" data-a="daFile" hidden></label>
+      <div class="sub" style="margin:4px 0 10px">Attach an .xlsx or .csv file with each student's name and teacher. Photos and PDFs can't be read on this website.</div>
+      <label class="btn full" style="cursor:pointer;text-align:center">${ico('up', 18)}Attach .xlsx or .csv file<input type="file" accept="${FILE_ACCEPT}" data-a="daFile" hidden></label>
     </div>${S.df ? resultCard(S.df, 'dfApply', 'Assign ' + (S.df.matched ? S.df.matched.length : 0) + ' students to their teachers') : ''}`;
     return html + card;
   };
@@ -5760,12 +5760,17 @@ Object.assign(CHANGE, {
 });
 
 /* ==================== Teacher timetable: each teacher's column lists their distributed students in every period (read-only) ==================== */
+function teacherForCol(ci) {
+  const T = ttTeach();
+  const byName = DB.teachers.find(t => normName(t.name) === normName(T.cols[ci]));
+  return byName || DB.teachers[ci] || null;
+}
 (function () {
   const prevTeacherTT = vTeacherTT;
   vTeacherTT = function () {
     const html = prevTeacherTT();
     return html.replace(/<textarea data-in="ttTcell" data-r="(\d+)" data-c="(\d+)"([^>]*)>([\s\S]*?)<\/textarea>/g, (m, r, c, attrs) => {
-      const t = DB.teachers[+c];
+      const t = teacherForCol(+c);
       const names = t ? DB.students.filter(s => s.tch === t.id).map(s => s.name).sort((a, b) => a.localeCompare(b)) : [];
       const body = names.map(n => esc(n)).join('\n');
       return `<textarea readonly data-r="${r}" data-c="${c}"${attrs.replace('data-in="ttTcell"', '')}>${body}</textarea>`;
@@ -5828,6 +5833,69 @@ Object.assign(CHANGE, {
     render();
   }
 });
+
+/* ==================== Teacher timetable: import a timetable file; distribute students from the timetable ==================== */
+function timetableFromRows(rows) {
+  const cleaned = rows.filter(r => r.some(c => String(c || '').trim()));
+  if (cleaned.length < 2) return { error: 'The timetable needs a heading row with teacher names, then one row per period.' };
+  const head = cleaned[0].map(c => String(c || '').trim());
+  const cols = head.slice(1).map((h, i) => h || ('Teacher ' + (i + 1)));
+  const rowsOut = [], cells = {};
+  cleaned.slice(1).forEach((r, ri) => {
+    const time = String(r[0] || '').trim();
+    rowsOut.push(time || ('Period ' + (ri + 1)));
+    cols.forEach((_, ci) => { const v = String(r[ci + 1] || '').trim(); if (v) cells[ri + '|' + ci] = v; });
+  });
+  return { cols, rows: rowsOut, cells };
+}
+function timetableMatches() {
+  const T = ttTeach(); const out = [];
+  Object.keys(T.cells || {}).forEach(k => {
+    const [r, c] = k.split('|').map(Number);
+    const t = teacherForCol(c); if (!t) return;
+    String(T.cells[k]).split(/\n|,/).map(x => x.replace(/\(.*?\)/g, '').trim()).filter(Boolean).forEach(name => out.push({ name, tid: t.id }));
+  });
+  return out;
+}
+Object.assign(CHANGE, {
+  ttImport: async el => {
+    const f = el.files && el.files[0]; if (!f) return;
+    toast('Reading ' + f.name + '…');
+    try {
+      const res = timetableFromRows(await fileRows(f));
+      if (res.error) { toast(res.error); return; }
+      const T = ttTeach();
+      T.cols = res.cols; T.rows = res.rows; T.cells = res.cells;
+      save(); toast('Timetable imported: ' + res.rows.length + ' periods, ' + res.cols.length + ' teachers');
+    } catch (e) { toast(fileErr(e)); }
+    render();
+  }
+});
+Object.assign(ACT, {
+  ttDistribute: () => {
+    const hits = timetableMatches();
+    let n = 0; const missing = [], clash = [], done = new Set();
+    hits.forEach(h => {
+      const st = DB.students.find(s => normName(s.name) === normName(h.name) || normName(s.name).startsWith(normName(h.name) + ' '));
+      if (!st) { missing.push(h.name); return; }
+      if (done.has(st.id)) { if (st.tch !== h.tid) clash.push(st.name); return; }   // a student listed under two teachers keeps the first
+      done.add(st.id); st.tch = h.tid; n++;
+    });
+    save();
+    toast('Distributed ' + n + ' students' + (missing.length ? ' · ' + new Set(missing).size + ' names not found' : '') + (clash.length ? ' · ' + new Set(clash).size + ' listed under two teachers (kept the first)' : ''));
+    render();
+  }
+});
+(function () {
+  const prevTT = vTT;
+  vTT = function () {
+    const out = prevTT();
+    if (S.ttView !== 'teacher') return out;
+    const row = `<div class="row" style="margin:0 0 10px"><label class="btn ghost sm" style="cursor:pointer">Import timetable file<input type="file" accept="${FILE_ACCEPT}" data-a="ttImport" hidden></label><button class="btn sm" data-a="ttDistribute">Distribute students from timetable</button></div>`;
+    const marker = '<div class="chips" style="margin-bottom:10px">';
+    return out.includes(marker) ? out.replace(marker, row + marker) : row + out;
+  };
+})();
 
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
