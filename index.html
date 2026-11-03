@@ -5429,7 +5429,8 @@ function homeCounts() {
   const prevHome = vHome;
   vHome = function () {
     const h = prevHome().replace(/<div class="kpi" style="--i:[123]"><b>[\s\S]*?<\/span><\/div>/g, '');
-    return h + homeCounts();
+    const qa = '<div class="sec"><h3>Quick actions</h3></div>';
+    return h.includes(qa) ? h.replace(qa, homeCounts() + qa) : h + homeCounts();   // counts sit above Quick actions
   };
 })();
 
@@ -5448,6 +5449,48 @@ stRow = function (s) {
     origImp();
     rows.forEach((r, i) => { const st = DB.students[before + i]; if (st) st.acad = r.group || r.level || ''; });
     save();
+  };
+})();
+
+/* ==================== Teacher timetable: distribute button and editable teacher names; import: name match adds the academic level ==================== */
+/* Column headings are the teachers: renaming a column renames that teacher */
+(function () {
+  const origTT = vTeacherTT;
+  vTeacherTT = function () {
+    const T = ttTeach();
+    T.cols.forEach((c, i) => { if (DB.teachers[i]) T.cols[i] = DB.teachers[i].name; });
+    return origTT();
+  };
+  CHANGE_VAL.ttTcol = el => {
+    const T = ttTeach(); const i = +el.dataset.c;
+    if (DB.teachers[i]) { DB.teachers[i].name = el.value.trim() || DB.teachers[i].name; save(); }
+    T.cols[i] = el.value; save();
+  };
+  ACT.ttTDistribute = () => { S.stack.push('distribute'); render(); window.scrollTo(0, 0); };
+  const withButton = () => {
+    const btn = `<div class="row" style="margin-top:10px"><button class="btn ghost sm" data-a="ttTDistribute">Distribute students to teachers</button></div>`;
+    return btn;
+  };
+  const origWrap = vTeacherTT;
+  vTeacherTT = function () { return origWrap() + withButton(); };
+})();
+
+/* Import: a name that already exists gets the file's academic level instead of a duplicate */
+(function () {
+  const origImp = ACT.impGo;
+  ACT.impGo = () => {
+    const rows = (S.impRows && S.impRows.rows) || [];
+    const byName = n => DB.students.find(s => s.name.trim().toLowerCase() === String(n || '').trim().toLowerCase());
+    const matches = [];
+    const fresh = [];
+    rows.forEach(r => { const st = byName(r.name); if (st) matches.push({ st, level: r.group || r.level || '' }); else fresh.push(r); });
+    if (S.impRows) S.impRows.rows = fresh;
+    const before = DB.students.length;
+    origImp();
+    fresh.forEach((r, i) => { const st = DB.students[before + i]; if (st) st.acad = r.group || r.level || ''; });
+    matches.forEach(m => { if (m.level) m.st.acad = m.level; });
+    save();
+    if (matches.length) toast(matches.length + ' existing student' + (matches.length === 1 ? '' : 's') + ' updated with the academic level');
   };
 })();
 
