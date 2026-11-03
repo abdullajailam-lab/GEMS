@@ -5625,7 +5625,7 @@ Object.assign(CHANGE, {
   Object.assign(TOP_TITLE, { levelsFile: 'Import student levels', distFile: 'Distribute from file' });
   const prevMore = vMore;
   vMore = function () {
-    const drop = ['Student distribution', 'Import student levels', 'Import from photo'];
+    const drop = ['Student distribution', 'Import student levels', 'Import from photo', 'Distribute from file'];
     const parts = prevMore().split('<div class="li"');
     let out = parts[0];
     for (let i = 1; i < parts.length; i++) {
@@ -5633,10 +5633,56 @@ Object.assign(CHANGE, {
       if (!drop.some(t => p.includes('<b>' + t + '</b>'))) out += '<div class="li"' + p;
     }
     const rows = [
-      ['levelsFile', 'doc', 'Import student levels', 'Upload a file; each matching name gets its level'],
-      ['distFile', 'grid', 'Distribute from file', 'Upload a file with teachers; each matching name gets its teacher']
+      ['levelsFile', 'doc', 'Import student levels', 'Upload a file; each matching name gets its level']
     ].map(([v, i, t, d]) => `<div class="li" data-a="stack" data-v="${v}"><div class="ico">${ico(i, 20)}</div><div class="grow"><b>${t}</b><div class="sub">${d}</div></div>${ico('chev', 18)}</div>`).join('');
     return out.replace('<div class="card">', '<div class="card">' + rows);
+  };
+})();
+
+/* ==================== Create groups: when "Nothing" is chosen, attach a photo, PDF or sheet to assign teachers ==================== */
+async function readTeacherPhotoOrPdf(f) {
+  let blob = f;
+  if (f.type.startsWith('image/')) { const url = await shrink(f, 1400, 0.85); blob = await (await fetch(url)).blob(); }
+  const prompt = 'Read this list of students and their teachers. Reply with JSON only, no markdown: {"items":[{"name":"student name","teacher":"teacher name"}]}. Copy names as written.';
+  const text = await askClaude(prompt, [blob], 'default');
+  const o = parseJSON(text);
+  if (!o || !Array.isArray(o.items)) throw coded('parse');
+  const matched = [], notFound = [];
+  o.items.map(it => ({ name: String(it.name || '').trim(), teacher: String(it.teacher || '').trim() })).filter(x => x.name).forEach(it => {
+    const st = DB.students.find(s => normName(s.name) === normName(it.name));
+    const t = DB.teachers.find(x => normName(x.name) === normName(it.teacher));
+    if (!st) notFound.push(it.name);
+    else if (!t) notFound.push(it.name + ' (' + it.teacher + ')');
+    else matched.push({ sid: st.id, name: st.name, value: t.id, label: t.name });
+  });
+  return { matched, notFound };
+}
+Object.assign(CHANGE, {
+  daFile: async el => {
+    const f = el.files && el.files[0]; if (!f) return;
+    toast('Reading file…');
+    try {
+      if (/\.(xlsx|csv|tsv|txt)$/i.test(f.name)) {
+        const rows = await fileRows(f);
+        S.df = matchFile(rows, /teacher/i, v => { const t = DB.teachers.find(x => normName(x.name) === normName(v)); return t ? { value: t.id, label: t.name } : null; });
+      } else {
+        S.df = await readTeacherPhotoOrPdf(f);
+      }
+    } catch (e) { S.df = { error: 'Could not read that file. Try a clear photo, a PDF, .xlsx or .csv.' }; }
+    render();
+  }
+});
+(function () {
+  const prevDist = vDistribute;
+  vDistribute = function () {
+    const html = prevDist();
+    if (S.dkey !== 'none') return html;
+    const card = `<div class="card" style="margin-top:12px">
+      <div class="f" style="margin-top:0">Attach the student list</div>
+      <div class="sub" style="margin:4px 0 10px">Attach a photo, a PDF, or an .xlsx or .csv file with each student's name and teacher.</div>
+      <label class="btn full" style="cursor:pointer;text-align:center">${ico('up', 18)}Attach photo, PDF or file<input type="file" accept="image/*,application/pdf,.xlsx,.csv,.tsv,.txt" data-a="daFile" hidden></label>
+    </div>${S.df ? resultCard(S.df, 'dfApply', 'Assign ' + (S.df.matched ? S.df.matched.length : 0) + ' students to their teachers') : ''}`;
+    return html + card;
   };
 })();
 
