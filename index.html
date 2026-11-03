@@ -5759,6 +5759,76 @@ Object.assign(CHANGE, {
   }
 });
 
+/* ==================== Teacher timetable: each teacher's column lists their distributed students in every period (read-only) ==================== */
+(function () {
+  const prevTeacherTT = vTeacherTT;
+  vTeacherTT = function () {
+    const html = prevTeacherTT();
+    return html.replace(/<textarea data-in="ttTcell" data-r="(\d+)" data-c="(\d+)"([^>]*)>([\s\S]*?)<\/textarea>/g, (m, r, c, attrs) => {
+      const t = DB.teachers[+c];
+      const names = t ? DB.students.filter(s => s.tch === t.id).map(s => s.name).sort((a, b) => a.localeCompare(b)) : [];
+      const body = names.map(n => esc(n)).join('\n');
+      return `<textarea readonly data-r="${r}" data-c="${c}"${attrs.replace('data-in="ttTcell"', '')}>${body}</textarea>`;
+    });
+  };
+})();
+
+/* ==================== Attendance: tap the same mark again to clear it; clear all marks for the day ==================== */
+ACT.mark = d => {
+  const k = S.date + '|T:' + S.attT;
+  DB.att[k] = DB.att[k] || {};
+  if (DB.att[k][d.id] === d.v) delete DB.att[k][d.id];   // same mark tapped again = clear it
+  else DB.att[k][d.id] = d.v;
+  save(); render();
+};
+ACT.attClear = () => {
+  if (!confirm('Clear all marks for this teacher on this day?')) return;
+  const k = S.date + '|T:' + S.attT;
+  delete DB.att[k];
+  save(); toast('Marks cleared for this day'); render();
+};
+(function () {
+  const prevAtt = vAttend;
+  vAttend = function () {
+    return prevAtt() + `<div class="row" style="margin-top:8px"><button class="btn ghost sm" data-a="attClear">Clear marks for this day</button></div>`;
+  };
+})();
+
+/* ==================== Import student levels: if the same file has a Teacher column, also assign teachers from it ==================== */
+function vLevelsFile() {
+  const chosen = S.lfName ? `<div class="sub" style="margin-top:8px">File: <b>${esc(S.lfName)}</b></div>` : '';
+  const lvl = S.lf ? resultCard(S.lf, 'lfApply', 'Set levels for ' + (S.lf.matched ? S.lf.matched.length : 0) + ' students') : '';
+  const tch = S.lfT && S.lfT.matched && S.lfT.matched.length
+    ? `<div class="card" style="margin-top:12px"><div class="f" style="margin-top:0">Teachers in this file</div>
+       <div class="sub" style="margin:6px 0 10px">${S.lfT.matched.length} student${S.lfT.matched.length === 1 ? '' : 's'} will be assigned to their teacher from the Teacher column.</div>
+       <div class="row"><button class="btn ghost sm" data-a="lfApplyTeachers">Also assign teachers (${S.lfT.matched.length})</button></div></div>`
+    : '';
+  return `<div class="between"><h1>Import student levels</h1></div>
+  <div class="sub">Upload a file with each student's name and level. Names that match a student get that level. A Teacher column in the same file can also assign teachers.</div>
+  <div class="card" style="margin-top:12px"><label class="btn full" style="cursor:pointer;text-align:center">${ico('up', 18)}Choose file<input type="file" accept="${FILE_ACCEPT}" data-a="lfFile" hidden></label>${chosen}
+    <div class="sub" style="margin-top:8px">The first row must have headings: Name (or Student) and Level (or Class / Grade / Performance level). Add a Teacher heading to assign teachers too.</div></div>
+  ${lvl}${tch}`;
+}
+Object.assign(ACT, {
+  lfApplyTeachers: () => {
+    (S.lfT && S.lfT.matched || []).forEach(m => { const st = DB.students.find(x => x.id === m.sid); if (st) st.tch = m.value; });
+    save(); toast('Teachers assigned for ' + ((S.lfT && S.lfT.matched.length) || 0) + ' students'); S.lfT = null; render();
+  }
+});
+Object.assign(CHANGE, {
+  lfFile: async el => {
+    const f = el.files && el.files[0]; if (!f) return;
+    S.lfName = f.name; S.lf = null; S.lfT = null; toast('Reading ' + f.name + '…'); render();
+    try {
+      const rows = await fileRows(f);
+      S.lf = matchFile(rows, /level|class|grade|academic|performance|stage/i, v => ({ value: v, label: v }));
+      const t = matchFile(rows, /teacher/i, v => { const x = DB.teachers.find(q => normName(q.name) === normName(v)); return x ? { value: x.id, label: x.name } : null; });
+      S.lfT = t && t.matched ? t : null;
+    } catch (e) { S.lf = { error: fileErr(e) }; }
+    render();
+  }
+});
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
