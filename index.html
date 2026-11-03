@@ -5367,6 +5367,90 @@ function vSignInPage() {
   ACT.sbSignOut = () => { try { localStorage.removeItem(SB_SESSION_KEY); } catch (e) { } S.stack = []; toast('Signed out'); render(); };
 })();
 
+/* ==================== Attendance by teacher; Home counts by programme and learning profile; timetable 7:15 to 12:45; academic level from the file ==================== */
+/* Timetable: lessons from 7:15, break 10:00 to 11:00, last period ends 12:45 */
+const NEW_PERIODS = [
+  { id: 'p1', label: 'Period 1', start: '07:15', end: '08:00', kind: 'lesson' },
+  { id: 'p2', label: 'Period 2', start: '08:00', end: '08:45', kind: 'lesson' },
+  { id: 'p3', label: 'Period 3', start: '08:45', end: '09:30', kind: 'lesson' },
+  { id: 'p4', label: 'Period 4', start: '09:30', end: '10:00', kind: 'lesson' },
+  { id: 'b1', label: 'Break', start: '10:00', end: '11:00', kind: 'break' },
+  { id: 'p5', label: 'Period 5', start: '11:00', end: '11:45', kind: 'lesson' },
+  { id: 'p6', label: 'Period 6', start: '11:45', end: '12:45', kind: 'lesson' }
+];
+DEF_PERIODS.splice(0, DEF_PERIODS.length, ...NEW_PERIODS.map(p => ({ ...p })));
+if (!DB.periods || !DB.periods.length || DB.periods[0].start === '07:45') { DB.periods = NEW_PERIODS.map(p => ({ ...p })); save(); }
+
+/* Attendance: teachers instead of groups */
+function teacherStudents(tid) { return DB.students.filter(s => s.tch === tid).sort((a, b) => a.name.localeCompare(b.name)); }
+function vAttendTeacher() {
+  if (!S.attT || !DB.teachers.some(t => t.id === S.attT)) S.attT = DB.teachers[0] ? DB.teachers[0].id : '';
+  const tid = S.attT || '';
+  const list = teacherStudents(tid);
+  const key = S.date + '|T:' + tid, rec = DB.att[key] || {};
+  const c = { P: 0, L: 0, A: 0 }; list.forEach(s => { if (rec[s.id]) c[rec[s.id]]++; });
+  const marked = c.P + c.L + c.A;
+  const isToday = S.date === today();
+  const chips = DB.teachers.length
+    ? `<div class="chips">${DB.teachers.map(t => `<button class="chip ${S.attT === t.id ? 'on' : ''}" data-a="pickTch" data-v="${t.id}">${esc(t.name)}</button>`).join('')}</div>`
+    : '<div class="empty">Add teachers first (Auto-group or Settings).</div>';
+  return `<div class="between"><h1>Attendance</h1><button class="btn ghost sm" data-a="attPdf">${ico('pdf', 18)}Report</button></div>
+  ${chips}
+  <div class="card" style="padding:12px"><div class="between">
+    <div class="stepper"><button data-a="dayStep" data-v="-1" aria-label="Previous day">‹</button><b style="min-width:150px;text-align:center">${esc(fmtD(S.date, { weekday: 'short', month: 'short', day: 'numeric' }))}</b><button data-a="dayStep" data-v="1" aria-label="Next day">›</button></div>
+    ${isToday ? '<span class="tag ok">Today</span>' : '<button class="lnk" data-a="dayToday">Today</button>'}</div></div>
+  <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+    <div class="kpi"><b style="color:#17754F">${c.P}</b><span>Present</span></div>
+    <div class="kpi"><b style="color:#8A5B07">${c.L}</b><span>Late</span></div>
+    <div class="kpi"><b style="color:#A52E2E">${c.A}</b><span>Absent</span></div></div>
+  <div class="row" style="margin-bottom:10px;justify-content:space-between"><span class="sub">${marked} of ${list.length} marked</span><button class="btn ghost sm" data-a="markAll" ${list.length ? '' : 'disabled'}>Mark all present</button></div>
+  <div class="card">${list.length ? list.map(s => `<div class="li" style="cursor:default">
+    <div class="av" style="background:${levelColor(s.level)}">${esc(initials(s.name))}</div>
+    <div class="grow"><b>${esc(s.name)}</b><div class="sub">${esc(s.acad || s.level || '')}</div></div>
+    <div class="seg" style="grid-auto-columns:auto">${[['P', 'P'], ['L', 'L'], ['A', 'A']].map(([v, l]) => `<button class="${rec[s.id] === v ? 'on ' + v : ''}" data-a="mark" data-id="${s.id}" data-v="${v}" style="min-width:44px">${l}</button>`).join('')}</div></div>`).join('') : '<div class="empty">No students under this teacher yet. Share students in Auto-group.</div>'}</div>
+  <div class="row" style="margin-top:14px"><button class="btn full" data-a="attSave">Save attendance</button></div>`;
+}
+Object.assign(ACT, {
+  pickTch: d => { S.attT = d.v; render(); },
+  mark: d => { const k = S.date + '|T:' + S.attT; DB.att[k] = DB.att[k] || {}; DB.att[k][d.id] = d.v; save(); render(); },
+  markAll: () => { const k = S.date + '|T:' + S.attT; DB.att[k] = DB.att[k] || {}; teacherStudents(S.attT).forEach(s => { DB.att[k][s.id] = 'P'; }); save(); toast('All marked present'); render(); }
+});
+vAttend = vAttendTeacher;   // the teacher attendance screen replaces the group version (one Save button only)
+
+/* Home: replace the three cards with counts by programme and by learning profile */
+function homeCounts() {
+  const prog = {}; DB.students.forEach(s => { const k = s.program || 'No programme'; prog[k] = (prog[k] || 0) + 1; });
+  const prf = {}; DB.students.forEach(s => profileCats(s).forEach(c => { prf[c] = (prf[c] || 0) + 1; }));
+  const cell = (n, l) => `<div class="kpi"><b>${n}</b><span>${esc(l)}</span></div>`;
+  return `<div class="sec"><h3>Students by programme</h3></div><div class="kpis" style="grid-template-columns:repeat(2,1fr)">${Object.keys(prog).map(k => cell(prog[k], k)).join('') || '<div class="sub">No students yet.</div>'}</div>
+  <div class="sec"><h3>Students by learning profile</h3></div><div class="kpis" style="grid-template-columns:repeat(2,1fr)">${Object.keys(prf).map(k => cell(prf[k], k)).join('') || '<div class="sub">No learning profiles recorded yet.</div>'}</div>`;
+}
+(function () {
+  const prevHome = vHome;
+  vHome = function () {
+    const h = prevHome().replace(/<div class="kpi" style="--i:[123]"><b>[\s\S]*?<\/span><\/div>/g, '');
+    return h + homeCounts();
+  };
+})();
+
+/* Student rows show the academic level */
+stRow = function (s) {
+  return `<div class="li" data-a="stack" data-v="student:${s.id}"><div class="av" style="background:${levelColor(s.level)}">${esc(initials(s.name))}</div>
+    <div class="grow"><b>${esc(s.name)}</b><div class="sub">${esc(s.acad || s.level)} · attendance ${rateOf(s.id)}</div></div>${ico('chev', 18)}</div>`;
+};
+
+/* Import: the class column of the file becomes each student's academic level */
+(function () {
+  const origImp = ACT.impGo;
+  ACT.impGo = () => {
+    const rows = (S.impRows && S.impRows.rows) || [];
+    const before = DB.students.length;
+    origImp();
+    rows.forEach((r, i) => { const st = DB.students[before + i]; if (st) st.acad = r.group || r.level || ''; });
+    save();
+  };
+})();
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
