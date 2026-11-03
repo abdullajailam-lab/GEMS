@@ -5244,6 +5244,25 @@ Object.assign(ACT, {
   vCloud = function () { return vCloudAccount() + prevCloud(); };
 })();
 
+/* ==================== Supabase connection built into the app (no URL or key to paste) ==================== */
+const SB_PROJECT_URL = 'https://sasodvdokwybanovtuwl.supabase.co';
+const SB_PUBLISHABLE_KEY = 'sb_publishable_1thcTe82binzV33wVjJ5Wg_3jBjuLiI';
+DB.cloud = { url: SB_PROJECT_URL, key: SB_PUBLISHABLE_KEY };
+save();
+function vCloudBuiltin() {
+  return `<div class="card"><div class="f" style="margin-top:0">Supabase project</div>
+    <div class="sub" style="margin:4px 0 8px">Connected to the GEMS database. Students and attendance are stored with access limited to each signed-in teacher.</div>
+    <div class="row" style="margin-top:8px"><button class="btn ghost sm" data-a="clTest">Test connection</button></div>
+    <div id="clStatus" class="sub" style="margin-top:10px"></div></div>`;
+}
+(function () {
+  const prev = vCloud;
+  vCloud = function () {
+    // show the account (sign-in / sync) card and the built-in connection status; the URL and key boxes are no longer shown
+    return vCloudAccount() + vCloudBuiltin();
+  };
+})();
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
