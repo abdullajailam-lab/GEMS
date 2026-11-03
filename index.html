@@ -5494,6 +5494,54 @@ stRow = function (s) {
   };
 })();
 
+/* ==================== More: counts with PDF, student distribution, student levels and photo import; teacher timetable shows the selected teacher's students ==================== */
+function countsPdf() {
+  const d = new PdfDoc({ title: 'Students by programme and learning profile', sub: DB.students.length + ' students', brand: PDF_BRAND() });
+  d.meta([['Students', String(DB.students.length)], ['Teachers', String(DB.teachers.length)]]);
+  const prog = {}; DB.students.forEach(s => { const k = s.program || 'No programme'; prog[k] = (prog[k] || 0) + 1; });
+  d.section('By programme');
+  d.table([{ h: 'Programme', w: 70 }, { h: 'Students', w: 30, align: 'center' }], Object.keys(prog).map(k => [{ t: k, b: true }, String(prog[k])]));
+  const prf = {}; DB.students.forEach(s => profileCats(s).forEach(c => { prf[c] = (prf[c] || 0) + 1; }));
+  d.section('By learning profile');
+  d.table([{ h: 'Learning profile', w: 70 }, { h: 'Students', w: 30, align: 'center' }], Object.keys(prf).map(k => [{ t: k, b: true }, String(prf[k])]));
+  d.sign(['Head of school', 'Date']);
+  return d;
+}
+ACT.countsPdf = () => exportFile('Students by programme and profile', countsPdf().build());
+ACT.ttTPick = d => { S.ttTeacher = d.v; render(); };
+
+(function () {
+  const prevMore = vMore;
+  vMore = function () {
+    const ico2 = (i) => ico(i, 20);
+    const extra = [
+      ['stack', 'calendar', 'Counts by programme and profile', 'Students per programme and learning profile, with PDF'],
+      ['distribute', 'grid', 'Student distribution', 'Share students to your teachers'],
+      ['import', 'doc', 'Import student levels', 'Upload a file and set each student\'s academic level'],
+      ['import', 'camera', 'Import from photo', 'Take a photo of the student list']
+    ];
+    const rows = extra.map(([a, v, t, dsc]) => `<div class="li" data-a="${a}" data-v="${v}"><div class="ico">${ico2(v)}</div><div class="grow"><b>${t}</b><div class="sub">${dsc}</div></div>${ico('chev', 18)}</div>`).join('');
+    const html = prevMore();
+    return html.replace('<div class="card">', '<div class="card">' + rows);
+  };
+  Object.assign(TOP_TITLE, {});
+})();
+
+/* Teacher timetable: pick a teacher to see their students */
+(function () {
+  const prev = vTeacherTT;
+  vTeacherTT = function () {
+    const T = ttTeach();
+    const picked = DB.teachers.find(t => t.id === S.ttTeacher);
+    const chips = DB.teachers.length ? `<div class="chips" style="margin-bottom:10px">${DB.teachers.map(t => `<button class="chip ${S.ttTeacher === t.id ? 'on' : ''}" data-a="ttTPick" data-v="${t.id}">${esc(t.name)}</button>`).join('')}</div>` : '';
+    const list = picked ? teacherStudents(picked.id) : [];
+    const studentsCard = picked
+      ? `<div class="card" style="margin-bottom:10px"><div class="f" style="margin-top:0">${esc(picked.name)} · ${list.length} student${list.length === 1 ? '' : 's'}</div><div class="sub" style="margin-top:6px">${list.length ? list.map(s => esc(s.name)).join(' · ') : 'No students yet.'}</div></div>`
+      : '';
+    return chips + studentsCard + prev();
+  };
+})();
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
