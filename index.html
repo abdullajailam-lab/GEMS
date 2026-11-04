@@ -6031,6 +6031,73 @@ CHANGE.ttImport = async el => {
   render();
 };
 
+/* ==================== Lesson plans: for a teacher's group (not one student); saved with the date; list grouped by date ==================== */
+function vPlanNew() {
+  const d = S.draft && S.draft.plan ? S.draft.plan : (S.draft = { plan: { cls: S.cls, subj: 'English', ind: '', min: 45, date: today(), tid: DB.teachers[0] ? DB.teachers[0].id : '' } }).plan;
+  if (!d.tid && DB.teachers[0]) d.tid = DB.teachers[0].id;
+  const opts = ['English', 'Mathematics', 'Dhivehi'].map(sub => {
+    const items = [...IND, ...DB.custom].filter(x => x.subj === sub);
+    return items.length ? `<optgroup label="${esc(sub)}">${items.map(x => `<option value="${x.id}" ${x.id === d.ind ? 'selected' : ''}>${esc(x.title || x.name || x.id)}</option>`).join('')}</optgroup>` : '';
+  }).join('');
+  const teachers = DB.teachers.length
+    ? `<div class="chips" style="margin-top:6px">${DB.teachers.map(t => `<button class="chip ${t.id === d.tid ? 'on' : ''}" data-a="pnTid" data-v="${t.id}">${esc(t.name)}</button>`).join('')}</div>`
+    : '<div class="sub">Add teachers first.</div>';
+  const group = d.tid ? teacherStudents(d.tid).length : 0;
+  return `<div class="between"><h1>New lesson plan</h1></div>
+  <div class="card">
+    <div class="f" style="margin-top:0">Teacher group</div>${teachers}
+    <div class="sub" style="margin-top:6px">${group} student${group === 1 ? '' : 's'} in this group. One plan is made for the whole group.</div>
+    <div class="f" style="margin-top:14px">Subject</div><div class="chips" style="margin-top:6px">${DB.subjects.map(s => `<button class="chip ${s === d.subj ? 'on' : ''}" data-a="pnSubj" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+    <label class="f">Indicator<select id="f_ind"><option value="">Choose an indicator</option>${opts}</select></label>
+    <label class="f">Date (saved with the plan)<input id="f_pd" type="date" value="${d.date}"></label>
+    <div class="f" style="margin-top:14px">Length</div><div class="seg" style="margin-top:6px">${[30, 45, 60].map(m => `<button class="${m === d.min ? 'on' : ''}" data-a="pnMin" data-v="${m}">${m} min</button>`).join('')}</div>
+    <div style="margin-top:16px"><button class="btn full" data-a="pnCreate">Save lesson plan</button></div>
+  </div>`;
+}
+function vPlans() {
+  const list = DB.plans.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const dates = [...new Set(list.map(p => p.date))];
+  const body = dates.length ? dates.map(dt => {
+    const plans = list.filter(p => p.date === dt);
+    const byTeacher = {};
+    plans.forEach(p => { const k = p.tid ? (teacherName(p.tid) || 'Teacher') : (clsName(p.cls) || 'Group'); (byTeacher[k] = byTeacher[k] || []).push(p); });
+    return `<div class="sec"><h3>${esc(fmtShort(dt))}</h3></div>` + Object.keys(byTeacher).map(k => `<div class="card" style="margin-bottom:10px"><div class="f" style="margin-top:0">${esc(k)}</div>${byTeacher[k].map(p => `<div class="li" data-a="stack" data-v="plan:${p.id}"><div class="av" style="background:linear-gradient(135deg,${subjColor(p.subj)},var(--navy))">${esc(initials(p.subj || 'L'))}</div><div class="grow"><b>${esc(p.title)}</b><div class="sub">${esc(p.subj || '')} · ${p.minutes} min</div></div>${ico('chev', 18)}</div>`).join('')}</div>`).join('');
+  }).join('') : '<div class="card"><div class="empty">No lesson plans yet. Tap New plan.</div></div>';
+  return `<div class="between"><h1>Lesson plans</h1><button class="btn sm" data-a="stack" data-v="planNew">${ico('plus', 18)}New plan</button></div>${body}`;
+}
+ACT.pnTid = d => { keepForm(); S.draft.plan.tid = d.v; render(); };
+ACT.pnCreate = () => {
+  keepForm();
+  const p = S.draft && S.draft.plan;
+  if (!p || !p.ind) return toast('Choose an indicator.');
+  const cls = p.cls || (DB.classes[0] && DB.classes[0].id);
+  const group = p.tid ? teacherStudents(p.tid) : studentsIn(cls);
+  if (!group.length) return toast(p.tid ? 'This teacher has no students yet.' : 'This group has no students yet.');
+  const pl = buildPlan(cls, p.subj, p.ind, p.min, p.date);
+  if (p.tid) { pl.tid = p.tid; pl.title = (pl.title || 'Lesson plan') + ' · ' + (teacherName(p.tid) || 'Teacher'); }
+  DB.plans.push(pl); save(); S.draft = null; S.stack.pop(); S.stack.push('plan:' + pl.id);
+  burst(); toast('Lesson plan saved' + (p.tid ? ' for ' + (teacherName(p.tid) || 'the group') : '')); render();
+};
+
+/* ==================== Teacher timetable: the three tools in one tidy card at the top ==================== */
+(function () {
+  const prevTT = vTT;
+  vTT = function () {
+    let out = prevTT();
+    if (S.ttView !== 'teacher') return out;
+    out = out.replace(/<div class="row" style="margin:0 0 10px"><button class="btn sm" data-a="ttTDistribute">Distribute students to teachers<\/button><\/div>/g, '');
+    out = out.replace(/<div class="row" style="margin:0 0 10px"><label class="btn ghost sm"[\s\S]*?Distribute students from timetable<\/button><\/div>/g, '');
+    const tools = `<div class="card" style="padding:12px;margin-bottom:12px"><div class="f" style="margin-top:0">Timetable tools</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <button class="btn sm" data-a="ttTDistribute">Distribute students to teachers</button>
+        <label class="btn ghost sm" style="cursor:pointer;text-align:center">Import timetable file<input type="file" accept="${FILE_ACCEPT}" data-a="ttImport" hidden></label>
+        <button class="btn sm" style="grid-column:1 / span 2" data-a="ttDistribute">Distribute students from timetable</button>
+      </div></div>`;
+    const marker = '<div class="chips" style="margin-bottom:10px">';
+    return out.includes(marker) ? out.replace(marker, tools + marker) : tools + out;
+  };
+})();
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
