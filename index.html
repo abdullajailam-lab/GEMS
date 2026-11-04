@@ -6098,6 +6098,112 @@ ACT.pnCreate = () => {
   };
 })();
 
+/* ==================== Lesson plan in the school's template: full indicator text, header details, introduction / main / conclusion with times ==================== */
+const PLAN_DEFAULTS = { topic: '', week: '', quarter: '', assess: 'Oral Questioning, Observation', res: 'PowerPoint, Worksheet' };
+function planDateTo(dt) { const d = new Date(dt + 'T00:00:00'); d.setDate(d.getDate() + 4); return d.toISOString().slice(0, 10); }
+function keepForm() {
+  const d = S.draft && S.draft.plan;
+  if (!d) return;
+  const f = document.getElementById('f_ind'); if (f) d.ind = f.value;
+  const pd = document.getElementById('f_pd'); if (pd) d.date = pd.value || d.date;
+  ['topic', 'week', 'quarter', 'assess', 'res'].forEach(k => { const el = document.getElementById('f_' + k); if (el) d[k] = el.value; });
+}
+function vPlanNew() {
+  const d = S.draft && S.draft.plan ? S.draft.plan : (S.draft = { plan: Object.assign({ cls: S.cls, subj: 'English', ind: '', min: 45, date: today(), tid: DB.teachers[0] ? DB.teachers[0].id : '' }, PLAN_DEFAULTS) }).plan;
+  if (!d.tid && DB.teachers[0]) d.tid = DB.teachers[0].id;
+  Object.keys(PLAN_DEFAULTS).forEach(k => { if (d[k] === undefined) d[k] = PLAN_DEFAULTS[k]; });
+  const opts = ['English', 'Mathematics', 'Dhivehi'].map(sub => {
+    const items = [...IND, ...DB.custom].filter(x => x.subj === sub);
+    return items.length ? `<optgroup label="${esc(sub)}">${items.map(x => `<option value="${x.id}" ${x.id === d.ind ? 'selected' : ''}>${esc(x.text || x.title || x.id)}</option>`).join('')}</optgroup>` : '';
+  }).join('');
+  const teachers = DB.teachers.length
+    ? `<div class="chips" style="margin-top:6px">${DB.teachers.map(t => `<button class="chip ${t.id === d.tid ? 'on' : ''}" data-a="pnTid" data-v="${t.id}">${esc(t.name)}</button>`).join('')}</div>`
+    : '<div class="sub">Add teachers first.</div>';
+  const group = d.tid ? teacherStudents(d.tid).length : 0;
+  return `<div class="between"><h1>New lesson plan</h1></div>
+  <div class="card">
+    <div class="f" style="margin-top:0">Teacher group</div>${teachers}
+    <div class="sub" style="margin-top:6px">${group} student${group === 1 ? '' : 's'} in this group.</div>
+    <div class="f" style="margin-top:14px">Subject</div><div class="chips" style="margin-top:6px">${DB.subjects.map(s => `<button class="chip ${s === d.subj ? 'on' : ''}" data-a="pnSubj" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+    <label class="f">Indicator (full text)<select id="f_ind"><option value="">Choose an indicator</option>${opts}</select></label>
+    <label class="f">Topic<input id="f_topic" value="${esc(d.topic)}" placeholder="e.g. Living things"></label>
+    <div class="row" style="gap:8px"><label class="f" style="flex:1">Quarter<input id="f_quarter" value="${esc(d.quarter)}"></label><label class="f" style="flex:1">Week<input id="f_week" value="${esc(d.week)}"></label></div>
+    <label class="f">Date from (saved with the plan)<input id="f_pd" type="date" value="${d.date}"></label>
+    <div class="f" style="margin-top:14px">Duration</div><div class="seg" style="margin-top:6px">${[30, 45, 60].map(m => `<button class="${m === d.min ? 'on' : ''}" data-a="pnMin" data-v="${m}">${m} min</button>`).join('')}</div>
+    <label class="f">Assessment tools<input id="f_assess" value="${esc(d.assess)}"></label>
+    <label class="f">Teaching resources<input id="f_res" value="${esc(d.res)}"></label>
+    <div style="margin-top:16px"><button class="btn full" data-a="pnCreate">Save lesson plan</button></div>
+  </div>`;
+}
+/* The school's template order: header details, key competencies, outcomes, introduction, main activities, conclusion, assessment, resources, teachers */
+function planPhases(p) {
+  const s = p.schedule || [];
+  if (s.length < 3) return { intro: s.slice(0, 1), main: s.slice(1, -1), concl: s.slice(-1) };
+  return { intro: s.slice(0, 1), main: s.slice(1, -1), concl: s.slice(-1) };
+}
+function vPlan(id) {
+  const p = DB.plans.find(x => x.id === id);
+  if (!p) return '<div class="empty">Plan not found.</div>';
+  const list = p.tid ? teacherStudents(p.tid) : studentsIn(p.cls);
+  const n = list.filter(s => p.achieved[s.id]).length;
+  const dateTo = p.dateTo || planDateTo(p.date);
+  const ph = planPhases(p);
+  const row = (title, mins) => `<div class="li" style="cursor:default"><div class="grow"><b>${esc(title)}</b></div><div class="tag">${mins} mins</div></div>`;
+  const block = (label, items) => `<div class="card" style="margin-bottom:10px"><div class="f" style="margin-top:0">${label}</div>${items.length ? items.map(b => row(b.title, b.minutes)).join('') : '<div class="sub">—</div>'}</div>`;
+  return `<div class="between"><h1>${esc(p.title)}</h1></div>
+  <div class="row" style="margin:6px 0 12px"><button class="btn ghost sm" data-a="plPdf" data-v="${p.id}">${ico('pdf', 18)}Export PDF</button><button class="lnk" style="color:var(--bad)" data-a="plDel" data-v="${p.id}">Delete plan</button></div>
+  <div class="card" style="margin-bottom:10px"><div class="f" style="margin-top:0">MILANDHOO SCHOOL · LESSON PLAN</div>
+    <div class="sub" style="margin-top:6px">Class: ${esc(p.tid ? (teacherName(p.tid) || 'Teacher group') : clsName(p.cls))} · Subject: ${esc(p.subj)} · Quarter: ${esc(p.quarter || '—')} · Week: ${esc(p.week || '—')}</div>
+    <div class="sub">Topic: ${esc(p.topic || '—')}</div>
+    <div class="sub">Duration: ${p.minutes} mins · Date from: ${esc(fmtD(p.date))} · Date to: ${esc(fmtD(dateTo))}</div>
+    <div class="sub">Teacher: ${esc(p.tid ? (teacherName(p.tid) || '') : '')}</div></div>
+  <div class="sec"><h3>Key competencies · Indicator</h3></div>
+  <div class="card"><div style="line-height:1.5">${esc(p.objective)}</div></div>
+  <div class="sec"><h3>Learning outcomes · Success criteria</h3></div>
+  <div class="card"><b>Students will be successful if they can:</b><div style="margin-top:6px">${esc(p.objective)}</div></div>
+  <div class="sec"><h3>Lesson</h3></div>
+  ${block('Introduction', ph.intro)}${block('Main activities', ph.main)}${block('Conclusion', ph.concl)}
+  <div class="sec"><h3>Assessment tools · Teaching resources</h3></div>
+  <div class="card"><div class="sub">Assessment tools: ${esc(p.assess || '—')}</div><div class="sub" style="margin-top:6px">Teaching resources: ${esc(p.res || '—')}</div></div>
+  <div class="sec"><h3>Achievement · ${n} of ${list.length}</h3></div>
+  <div class="card">${list.length ? list.map(s => `<div class="li" style="cursor:default"><div class="grow"><b>${esc(s.name)}</b></div><button class="chip ${p.achieved[s.id] ? 'on' : ''}" data-a="achTog" data-id="${p.id}" data-v="${s.id}">${p.achieved[s.id] ? 'Achieved' : 'Not yet'}</button></div>`).join('') : '<div class="sub">No students in this group.</div>'}</div>`;
+}
+ACT.pnCreate = () => {
+  keepForm();
+  const p = S.draft && S.draft.plan;
+  if (!p || !p.ind) return toast('Choose an indicator.');
+  const cls = p.cls || (DB.classes[0] && DB.classes[0].id);
+  const group = p.tid ? teacherStudents(p.tid) : studentsIn(cls);
+  if (!group.length) return toast(p.tid ? 'This teacher has no students yet.' : 'This group has no students yet.');
+  const pl = buildPlan(cls, p.subj, p.ind, p.min, p.date);
+  const ind = indById(p.ind);
+  pl.objective = ind ? ind.text : pl.objective;
+  pl.topic = p.topic || ''; pl.week = p.week || ''; pl.quarter = p.quarter || ''; pl.assess = p.assess || PLAN_DEFAULTS.assess; pl.res = p.res || PLAN_DEFAULTS.res;
+  pl.dateTo = planDateTo(p.date);
+  if (p.tid) { pl.tid = p.tid; pl.title = (p.topic || pl.title || 'Lesson plan') + ' · ' + (teacherName(p.tid) || 'Teacher'); }
+  DB.plans.push(pl); save(); S.draft = null; S.stack.pop(); S.stack.push('plan:' + pl.id);
+  burst(); toast('Lesson plan saved'); render();
+};
+function pdfPlan(p) {
+  const d = new PdfDoc({ title: 'MILANDHOO SCHOOL · LESSON PLAN', sub: (p.tid ? teacherName(p.tid) : clsName(p.cls)) + ' · ' + p.subj + ' · ' + fmtD(p.date), brand: PDF_BRAND() });
+  d.meta([['Class', p.tid ? (teacherName(p.tid) || '') : clsName(p.cls)], ['Subject', p.subj], ['Quarter', p.quarter || '—'], ['Week', p.week || '—'], ['Duration', p.minutes + ' mins'], ['Topic', p.topic || '—'], ['Date from', fmtShort(p.date)], ['Date to', fmtShort(p.dateTo || planDateTo(p.date))]]);
+  d.section('Key competencies · Indicator');
+  d.box(p.objective || 'No indicator recorded.', { accent: PDFC.cyan, bold: true });
+  d.section('Learning outcomes · Success criteria');
+  d.box('Students will be successful if they can: ' + (p.objective || ''), {});
+  const ph = planPhases(p);
+  d.section('Introduction');
+  d.table([{ h: 'Activity', w: 80 }, { h: 'Time', w: 20, align: 'center' }], ph.intro.map(b => [b.title, b.minutes + ' mins']));
+  d.section('Main activities');
+  d.table([{ h: 'Activity', w: 80 }, { h: 'Time', w: 20, align: 'center' }], ph.main.map(b => [b.title, b.minutes + ' mins']));
+  d.section('Conclusion');
+  d.table([{ h: 'Activity', w: 80 }, { h: 'Time', w: 20, align: 'center' }], ph.concl.map(b => [b.title, b.minutes + ' mins']));
+  d.section('Assessment tools · Teaching resources');
+  d.box('Assessment tools: ' + (p.assess || '—') + '\nTeaching resources: ' + (p.res || '—'), {});
+  d.sign(['Teacher', 'Leading teacher']);
+  return d;
+}
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
