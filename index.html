@@ -6412,6 +6412,46 @@ ACT.asgClear = () => {
   };
 })();
 
+/* ==================== Teacher distribution report: uses each student's assigned teacher (manual assignments), not the automatic split ==================== */
+function actualDistributionPlan() {
+  const plan = DB.teachers.map(t => ({ t, list: DB.students.filter(s => s.tch === t.id).sort((a, b) => a.name.localeCompare(b.name)) }));
+  const unassigned = DB.students.filter(s => !DB.teachers.some(t => t.id === s.tch)).sort((a, b) => a.name.localeCompare(b.name));
+  return { plan, unassigned };
+}
+function teacherReportRows() {
+  const { plan, unassigned } = actualDistributionPlan();
+  const rows = [['Teacher', 'Student', 'Class', 'Level', 'Programme']];
+  plan.forEach(p => {
+    if (!p.list.length) rows.push([p.t.name, '(no students)', '', '', '']);
+    p.list.forEach(s => rows.push([p.t.name, s.name, clsName(s.cls) || '', s.level || '', s.program || '']));
+  });
+  unassigned.forEach(s => rows.push(['Not assigned', s.name, clsName(s.cls) || '', s.level || '', s.program || '']));
+  return rows;
+}
+function teacherPdf() {
+  const { plan, unassigned } = actualDistributionPlan();
+  const assigned = DB.students.length - unassigned.length;
+  const d = new PdfDoc({ title: 'Teacher distribution', sub: assigned + ' of ' + DB.students.length + ' students assigned', brand: PDF_BRAND() });
+  d.meta([['Students', String(DB.students.length)], ['Teachers', String(DB.teachers.length)], ['Not assigned', String(unassigned.length)], ['Date', new Date().toLocaleDateString()]]);
+  d.section('Summary');
+  const rows = plan.map(p => [{ t: p.t.name, b: true }, { t: String(p.list.length), b: true, align: 'center' }]);
+  if (unassigned.length) rows.push([{ t: 'Not assigned', b: true }, { t: String(unassigned.length), b: true, align: 'center' }]);
+  d.table([{ h: 'Teacher', w: 60 }, { h: 'Students', w: 40, align: 'center' }], rows);
+  plan.forEach(p => {
+    d.section(p.t.name + ' · ' + p.list.length + ' students');
+    if (!p.list.length) { d.box('No students assigned yet.', {}); return; }
+    d.table([{ h: 'Student', w: 50 }, { h: 'Class', w: 20, align: 'center' }, { h: 'Level', w: 30, align: 'center' }],
+      p.list.map(s => [s.name, clsName(s.cls) || '', s.level || '']));
+  });
+  if (unassigned.length) {
+    d.section('Not assigned · ' + unassigned.length + ' students');
+    d.table([{ h: 'Student', w: 50 }, { h: 'Class', w: 20, align: 'center' }, { h: 'Level', w: 30, align: 'center' }],
+      unassigned.map(s => [s.name, clsName(s.cls) || '', s.level || '']));
+  }
+  d.sign(['Head of school', 'Date']);
+  return d;
+}
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
