@@ -807,6 +807,27 @@ html,body{max-width:100%;overflow-x:hidden}
 .top{width:100%;max-width:760px;margin-left:auto;margin-right:auto;box-sizing:border-box;left:auto;right:auto}
 nav{width:100%;max-width:760px;box-sizing:border-box}
 main,.card,.sec,.kpis,.chips{box-sizing:border-box;max-width:100%}
+/* ==================== Any device: content uses the space it has; tiles and lists rearrange; wide tables scroll inside their box ==================== */
+:root{--app-max:1120px}
+.app,.top,nav{max-width:var(--app-max)!important}
+.app{padding-left:clamp(12px,3vw,28px);padding-right:clamp(12px,3vw,28px)}
+.top{padding-left:clamp(14px,3vw,28px);padding-right:clamp(14px,3vw,28px)}
+nav{left:50%;right:auto;transform:translateX(-50%);width:min(100%,var(--app-max))}
+.kpis,.qa{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;max-width:100%}
+.card,.li,.sec{max-width:100%;box-sizing:border-box}
+.card{overflow-wrap:anywhere}
+.tt-wrap,.tt-scroll,.table-wrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{max-width:100%}
+img,svg,video,canvas{max-width:100%;height:auto}
+input,select,textarea,button{max-width:100%}
+@media (min-width:900px){
+  body{font-size:16px}
+  .app{padding-top:8px}
+  .top{border-radius:0 0 26px 26px}
+}
+@media (max-width:360px){ html{font-size:14px} }
+.top{width:auto;margin-left:calc(-1 * clamp(12px,3vw,28px));margin-right:calc(-1 * clamp(12px,3vw,28px))}
 </style>
 </head>
 
@@ -6209,6 +6230,87 @@ function pdfPlan(p) {
   d.sign(['Teacher', 'Leading teacher']);
   return d;
 }
+
+/* ==================== Lesson plan achievement: FA (Fully achieved), MA (Mostly achieved), A (Achieving) per student ==================== */
+const ACH_LEVELS = [['FA', 'Fully achieved'], ['MA', 'Mostly achieved'], ['A', 'Achieving']];
+ACT.achSet = d => {
+  const p = DB.plans.find(x => x.id === d.id); if (!p) return;
+  p.achieved = p.achieved || {};
+  if (p.achieved[d.s] === d.v) delete p.achieved[d.s]; else p.achieved[d.s] = d.v;
+  save(); render();
+};
+function vPlanAchievement(p) {
+  const list = p.tid ? teacherStudents(p.tid) : studentsIn(p.cls);
+  const rated = list.filter(s => p.achieved && p.achieved[s.id]).length;
+  return `<div class="sec"><h3>Achievement · ${rated} of ${list.length} rated</h3></div>
+  <div class="card"><div class="sub" style="margin-bottom:8px">FA = Fully achieved · MA = Mostly achieved · A = Achieving</div>
+  ${list.length ? list.map(s => `<div class="li" style="cursor:default;flex-wrap:wrap"><div class="grow"><b>${esc(s.name)}</b></div><div class="seg" style="grid-auto-columns:auto">${ACH_LEVELS.map(([v, t]) => `<button class="${p.achieved && p.achieved[s.id] === v ? 'on' : ''}" title="${t}" data-a="achSet" data-id="${p.id}" data-s="${s.id}" data-v="${v}" style="min-width:52px">${v}</button>`).join('')}</div></div>`).join('') : '<div class="sub">No students in this group.</div>'}</div>`;
+}
+(function () {
+  const prevPlan = vPlan;
+  vPlan = function (id) {
+    const html = prevPlan(id);
+    const p = DB.plans.find(x => x.id === id);
+    if (!p) return html;
+    const i = html.indexOf('<div class="sec"><h3>Achievement');
+    return i < 0 ? html : html.slice(0, i) + vPlanAchievement(p);
+  };
+})();
+
+/* ==================== Teacher distribution report: per teacher, their students; save as PDF or Excel ==================== */
+function teacherReportRows() {
+  const plan = computeDistribution(S.distMode) || [];
+  const rows = [['Teacher', 'Student', 'Class', 'Level', 'Programme']];
+  plan.forEach(p => {
+    if (!p.list.length) rows.push([p.t.name, '(no students)', '', '', '']);
+    p.list.forEach(s => rows.push([p.t.name, s.name, clsName(s.cls) || '', s.level || '', s.program || '']));
+  });
+  return rows;
+}
+function xlsxBlob(rows, sheetName) {
+  const enc = new TextEncoder();
+  const colL = i => String.fromCharCode(65 + i);
+  const cell = (v, r, c) => `<c r="${colL(c)}${r + 1}" t="inlineStr"><is><t xml:space="preserve">${esc(String(v == null ? '' : v))}</t></is></c>`;
+  const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const sheet = head + `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${rows.map((r, ri) => `<row r="${ri + 1}">${r.map((v, ci) => cell(v, ri, ci)).join('')}</row>`).join('')}</sheetData></worksheet>`;
+  const wb = head + `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${esc(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+  const wbRels = head + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`;
+  const rels = head + `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
+  const ct = head + `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`;
+  const zipped = rbZip([
+    { name: '[Content_Types].xml', data: enc.encode(ct) },
+    { name: '_rels/.rels', data: enc.encode(rels) },
+    { name: 'xl/workbook.xml', data: enc.encode(wb) },
+    { name: 'xl/_rels/workbook.xml.rels', data: enc.encode(wbRels) },
+    { name: 'xl/worksheets/sheet1.xml', data: enc.encode(sheet) }
+  ]);
+  return new Blob([zipped], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+function teacherPdf() {
+  const plan = computeDistribution(S.distMode) || [];
+  const d = new PdfDoc({ title: 'Teacher distribution', sub: DB.students.length + ' students across ' + DB.teachers.length + ' teachers', brand: PDF_BRAND() });
+  d.meta([['Students', String(DB.students.length)], ['Teachers', String(DB.teachers.length)], ['Date', new Date().toLocaleDateString()]]);
+  d.section('Summary');
+  d.table([{ h: 'Teacher', w: 60 }, { h: 'Students', w: 40, align: 'center' }], plan.map(p => [{ t: p.t.name, b: true }, { t: String(p.list.length), b: true, align: 'center' }]));
+  plan.forEach(p => {
+    d.section(p.t.name + ' · ' + p.list.length + ' students');
+    if (!p.list.length) { d.box('No students assigned yet.', {}); return; }
+    d.table([{ h: 'Student', w: 50 }, { h: 'Class', w: 20, align: 'center' }, { h: 'Level', w: 30, align: 'center' }],
+      p.list.map(s => [s.name, clsName(s.cls) || '', s.level || '']));
+  });
+  d.sign(['Head of school', 'Date']);
+  return d;
+}
+ACT.distPdf = () => exportFile('Teacher distribution', teacherPdf().build());
+ACT.teachXlsx = () => exportBlob('Teacher distribution', xlsxBlob(teacherReportRows(), 'Teacher distribution'), 'xlsx');
+(function () {
+  const prevReports = vReports;
+  vReports = function () {
+    return prevReports() + `<div class="card" style="margin-top:12px"><div class="f" style="margin-top:0">Teacher distribution · save</div>
+      <div class="sub" style="margin:4px 0 10px">Each teacher and their students. Save as a PDF to print, or as an Excel file to edit.</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn sm" data-a="distPdf">${ico('pdf', 18)}Save PDF</button><button class="btn ghost sm" data-a="teachXlsx">Save Excel</button></div></div>`;
+  };
+})();
 
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
