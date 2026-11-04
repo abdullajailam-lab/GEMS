@@ -6347,6 +6347,41 @@ ACT.assignSet = d => {
   };
 })();
 
+/* ==================== Assign teachers: pick a teacher, then tick the students who belong to that teacher ==================== */
+function vAssign() {
+  const T = DB.teachers;
+  if (S.asgT === undefined || (S.asgT && !T.some(t => t.id === S.asgT))) S.asgT = T[0] ? T[0].id : '';
+  const sel = S.asgT;
+  const isNone = sel === '';
+  const students = DB.students.slice().sort((a, b) => a.name.localeCompare(b.name));
+  const teacherOf = s => T.find(t => t.id === s.tch);
+  const mine = students.filter(s => isNone ? !teacherOf(s) : s.tch === sel);
+  const chips = `<div class="chips" style="margin-bottom:14px">${T.map(t => `<button class="chip ${t.id === sel ? 'on' : ''}" data-a="asgPick" data-v="${t.id}">${esc(t.name)}</button>`).join('')}<button class="chip ${isNone ? 'on' : ''}" data-a="asgPick" data-v="">Not assigned</button></div>`;
+  const row = s => {
+    const on = !isNone && s.tch === sel;
+    const other = teacherOf(s);
+    const tag = on ? '' : (other ? `<div class="sub" style="font-size:12px">With ${esc(other.name)}</div>` : '<div class="sub" style="font-size:12px">Not assigned</div>');
+    return `<div class="li" data-a="asgToggle" data-s="${s.id}" style="cursor:pointer">
+      <div style="width:28px;height:28px;border-radius:50%;flex:0 0 28px;display:grid;place-items:center;border:2px solid ${on ? 'var(--navy)' : '#CBD2E0'};background:${on ? 'var(--navy)' : '#fff'};color:#fff;font-weight:800;font-size:14px">${on ? '✓' : ''}</div>
+      <div class="grow" style="margin-left:12px"><b>${esc(s.name)}</b><div class="sub" style="font-size:12px">${esc(clsName(s.cls) || s.level || '')}</div>${tag}</div></div>`;
+  };
+  const selName = isNone ? 'Not assigned' : ((T.find(t => t.id === sel) || {}).name || '');
+  const assignedCount = students.filter(s => s.tch && T.some(t => t.id === s.tch)).length;
+  return `<div class="between"><h1>Assign teachers</h1></div>
+  <div class="sub" style="margin-bottom:10px">${assignedCount} of ${students.length} students have a teacher.</div>
+  ${chips}
+  <div class="sec"><h3>${esc(selName)} · ${mine.length} student${mine.length === 1 ? '' : 's'}</h3></div>
+  <div class="card" style="padding:6px 14px">${mine.length ? mine.map(row).join('') : '<div class="sub" style="padding:14px 0">No students here yet. Tap a student below to add them.</div>'}</div>
+  ${isNone ? '' : `<div class="sec" style="margin-top:14px"><h3>Tap a name to add to ${esc(selName)}</h3></div><div class="card" style="padding:6px 14px">${students.filter(s => s.tch !== sel).map(row).join('') || '<div class="sub" style="padding:14px 0">Every student is with this teacher.</div>'}</div>`}`;
+}
+ACT.asgPick = d => { S.asgT = d.v; render(); };
+ACT.asgToggle = d => {
+  const st = DB.students.find(x => x.id === d.s); if (!st) return;
+  const sel = S.asgT || '';
+  st.tch = (st.tch === sel) ? '' : sel;
+  save(); render();
+};
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
