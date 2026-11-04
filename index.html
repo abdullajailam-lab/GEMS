@@ -5897,6 +5897,48 @@ Object.assign(ACT, {
   };
 })();
 
+/* ==================== Home: no Today timetable. File import: reads comma, semicolon and tab files and Excel files ==================== */
+(function () {
+  const prevHome = vHome;
+  vHome = function () {
+    const html = prevHome();
+    const start = html.indexOf('<div class="sec"><h3>Today ·');
+    if (start < 0) return html;
+    const next = html.indexOf('<div class="sec"><h3>', start + 10);
+    return html.slice(0, start) + (next < 0 ? '' : html.slice(next));
+  };
+})();
+function parseDelimitedLine(line, sep) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+    else if (ch === sep && !q) { out.push(cur.trim()); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+async function fileRows(f) {
+  const n = (f.name || '').toLowerCase();
+  if (n.endsWith('.xls')) throw new Error('old-xls');
+  const buf = await f.arrayBuffer();
+  const head = new Uint8Array(buf, 0, 2);
+  if (head[0] === 0x50 && head[1] === 0x4B) return firstSheetRows(await unzipEntries(buf));   // .xlsx is a zipped file
+  const text = new TextDecoder('utf-8').decode(buf).replace(/^\uFEFF/, '');
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) throw new Error('empty');
+  const first = lines[0];
+  const seps = [',', ';', '\t'];
+  const sep = seps.sort((a, b) => first.split(b).length - first.split(a).length)[0];
+  return lines.map(l => parseDelimitedLine(l, sep));
+}
+function fileErr(e) {
+  if (e && e.message === 'old-xls') return 'This is an old .xls file. Open it and save as .xlsx or .csv, then choose it again.';
+  if (e && e.message === 'empty') return 'The file is empty.';
+  return 'Could not read that file. Save it as .xlsx or .csv (Excel: File → Save As → CSV) and try again.';
+}
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
