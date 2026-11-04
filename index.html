@@ -6382,6 +6382,36 @@ ACT.asgToggle = d => {
   save(); render();
 };
 
+/* ==================== Timetable: the class buttons grid is removed. Assign teachers: a Clear option for the selected teacher ==================== */
+(function () {
+  const prevTT = vTT;
+  vTT = function () {
+    const out = prevTT();
+    if (S.ttView === 'teacher') return out;
+    return out.replace(/<div class="chips"[^>]*>(?:(?!<\/div>)[\s\S])*?data-a="pickCls"(?:(?!<\/div>)[\s\S])*?<\/div>/g, '');
+  };
+})();
+ACT.asgClear = () => {
+  const sel = S.asgT || '';
+  if (!sel) return;
+  const name = (DB.teachers.find(t => t.id === sel) || {}).name || 'this teacher';
+  const n = DB.students.filter(s => s.tch === sel).length;
+  if (!n) return toast('No students with ' + name);
+  if (!confirm('Remove all ' + n + ' students from ' + name + '?')) return;
+  DB.students.forEach(s => { if (s.tch === sel) s.tch = ''; });
+  save(); toast('Cleared ' + n + ' students from ' + name); render();
+};
+(function () {
+  const prevAssign = vAssign;
+  vAssign = function () {
+    const html = prevAssign();
+    const sel = S.asgT || '';
+    if (!sel) return html;
+    const name = (DB.teachers.find(t => t.id === sel) || {}).name || 'this teacher';
+    return html + `<div class="card" style="margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"><div class="sub">Clear the teacher to remove every student from ${esc(name)}.</div><button class="btn ghost sm" data-a="asgClear" style="color:var(--bad)">Clear ${esc(name)}</button></div>`;
+  };
+})();
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
