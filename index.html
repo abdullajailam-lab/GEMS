@@ -6452,24 +6452,12 @@ function teacherPdf() {
   return d;
 }
 
-/* ==================== Students by teacher: Create distribution shares everyone out, the same way the report is made ==================== */
-ACT.createDist = () => {
-  if (!DB.teachers.length) return toast('Add teachers first.');
-  const hasAssigned = DB.students.some(s => DB.teachers.some(t => t.id === s.tch));
-  if (hasAssigned && !confirm('Create the distribution now? This replaces the current teacher assignments.')) return;
-  const plan = computeDistribution(S.distMode) || [];
-  plan.forEach(p => p.list.forEach(s => { const st = DB.students.find(x => x.id === s.id); if (st) st.tch = p.t.id; }));
-  save(); toast('Distribution created for ' + DB.students.length + ' students'); render();
-};
+/* ==================== Students by teacher: the automatic share card is removed. Reports use the manual assignments. ==================== */
 (function () {
   const prevStudents = vStudents;
   vStudents = function () {
-    const mode = S.distMode === 'levels' ? 'whole levels' : 'mixed levels';
-    const card = `<div class="card" style="margin-top:12px"><div class="f" style="margin-top:0">Create distribution</div><div class="sub" style="margin:4px 0 10px">Share all ${DB.students.length} students evenly across ${DB.teachers.length} teacher${DB.teachers.length === 1 ? '' : 's'} (${mode}). This matches the Teacher distribution report.</div><div class="row"><button class="btn sm" data-a="createDist">Create distribution</button></div></div>`;
     const html = prevStudents();
-    const re = /<div class="card" style="margin-top:12px"><div class="sub">You have[\s\S]*?<\/button><\/div><\/div>/;
-    if (re.test(html)) return html.replace(re, card);
-    return html.replace('<div id="stList"', card + '<div id="stList"');
+    return html.replace(/<div class="card" style="margin-top:12px"><div class="sub">You have[\s\S]*?<\/button><\/div><\/div>/, '');
   };
 })();
 
