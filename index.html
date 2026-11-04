@@ -5701,7 +5701,7 @@ Object.assign(CHANGE, {
 })();
 
 /* ==================== Import student levels: easier to find and load the file; clearer messages ==================== */
-const FILE_ACCEPT = '.xlsx,.csv,.tsv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const FILE_ACCEPT = '.xlsx,.docx,.csv,.tsv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 async function fileRows(f) {
   const n = (f.name || '').toLowerCase();
   if (n.endsWith('.xls')) throw new Error('old-xls');
