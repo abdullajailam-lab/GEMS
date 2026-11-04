@@ -5939,6 +5939,40 @@ function fileErr(e) {
   return 'Could not read that file. Save it as .xlsx or .csv (Excel: File → Save As → CSV) and try again.';
 }
 
+/* ==================== Word (.docx) import: reads the first table (or the lines) of the document ==================== */
+function wordRows(xml) {
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const paraText = p => Array.from(p.getElementsByTagName('w:t')).map(t => t.textContent).join('');
+  const tables = Array.from(doc.getElementsByTagName('w:tbl'));
+  if (tables.length) {
+    return Array.from(tables[0].getElementsByTagName('w:tr')).map(tr =>
+      Array.from(tr.getElementsByTagName('w:tc')).map(tc =>
+        Array.from(tc.getElementsByTagName('w:p')).map(paraText).join(' ').trim()));
+  }
+  return Array.from(doc.getElementsByTagName('w:p')).map(paraText).map(t => t.trim()).filter(Boolean).map(line => {
+    const sep = line.indexOf('\t') >= 0 ? '\t' : (line.indexOf(';') >= 0 ? ';' : ',');
+    return parseDelimitedLine(line, sep);
+  });
+}
+const prevFileRows = fileRows;
+fileRows = async function (f) {
+  const n = (f.name || '').toLowerCase();
+  if (n.endsWith('.docx')) {
+    const files = await unzipEntries(await f.arrayBuffer());
+    if (!files['word/document.xml']) throw new Error('not a word document');
+    const rows = wordRows(files['word/document.xml']).filter(r => r.some(c => String(c || '').trim()));
+    if (!rows.length) throw new Error('empty');
+    return rows;
+  }
+  return prevFileRows(f);
+};
+function fileErr(e) {
+  if (e && e.message === 'old-xls') return 'This is an old .xls file. Open it and save as .xlsx or .csv, then choose it again.';
+  if (e && e.message === 'empty') return 'The file is empty.';
+  if (e && e.message === 'not a word document') return 'This Word file could not be read. Save it as .docx, or copy the list into Excel and save as .xlsx.';
+  return 'Could not read that file. Save it as .xlsx, .csv or .docx and try again.';
+}
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
