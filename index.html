@@ -828,6 +828,9 @@ input,select,textarea,button{max-width:100%}
 }
 @media (max-width:360px){ html{font-size:14px} }
 .top{width:auto;margin-left:calc(-1 * clamp(12px,3vw,28px));margin-right:calc(-1 * clamp(12px,3vw,28px))}
+/* Teacher and option chips: equal size, evenly spaced, tidy on every screen */
+.chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,118px),1fr));gap:8px;align-items:stretch}
+.chips .chip{width:100%;min-width:0;white-space:normal;text-align:center;justify-content:center;line-height:1.2;padding:9px 10px}
 </style>
 </head>
 
@@ -5059,7 +5062,7 @@ function drawStList() {
     return `<div class="card teacher-card" style="--i:${ti}">
       <div class="teacher-h"><div class="av" style="background:linear-gradient(135deg,var(--blue),var(--navy))">${esc(initials(t.name))}</div>
         <div class="grow"><b>${esc(t.name)}</b><div class="sub">${esc(t.role || 'Teacher')} · ${list.length} student${list.length === 1 ? '' : 's'}</div></div></div>
-      ${list.length ? list.map(s => stRow(s)).join('') : '<div class="sub" style="padding:10px 0">No students yet. Tap Share to teachers.</div>'}
+      ${list.length ? list.map(s => stRow(s)).join('') : '<div class="sub" style="padding:10px 0">No students yet. Tap Add.</div>'}
     </div>`;
   }).join('');
   const rest = DB.students.filter(s => !assignedTeacherId(s)).sort(byStudentName);
@@ -6116,7 +6119,6 @@ ACT.pnCreate = () => {
     out = out.replace(/<div class="row" style="margin:0 0 10px"><label class="btn ghost sm"[\s\S]*?Distribute students from timetable<\/button><\/div>/g, '');
     const tools = `<div class="card" style="padding:12px;margin-bottom:12px"><div class="f" style="margin-top:0">Timetable tools</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
-        <button class="btn sm" data-a="ttTDistribute">Distribute students to teachers</button>
         <label class="btn ghost sm" style="cursor:pointer;text-align:center">Import timetable file<input type="file" accept="${FILE_ACCEPT}" data-a="ttImport" hidden></label>
         <button class="btn sm" style="grid-column:1 / span 2" data-a="ttDistribute">Distribute students from timetable</button>
       </div></div>`;
@@ -6309,6 +6311,39 @@ ACT.teachXlsx = () => exportBlob('Teacher distribution', xlsxBlob(teacherReportR
     return prevReports() + `<div class="card" style="margin-top:12px"><div class="f" style="margin-top:0">Teacher distribution · save</div>
       <div class="sub" style="margin:4px 0 10px">Each teacher and their students. Save as a PDF to print, or as an Excel file to edit.</div>
       <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn sm" data-a="distPdf">${ico('pdf', 18)}Save PDF</button><button class="btn ghost sm" data-a="teachXlsx">Save Excel</button></div></div>`;
+  };
+})();
+
+/* ==================== Assign teachers: choose a teacher for each student (no automatic sharing) ==================== */
+function vAssign() {
+  const teachers = DB.teachers;
+  const students = DB.students.slice().sort((a, b) => a.name.localeCompare(b.name));
+  const chipsFor = s => `<div class="chips" style="margin-top:6px">${teachers.map(t => `<button class="chip ${s.tch === t.id ? 'on' : ''}" data-a="assignSet" data-s="${s.id}" data-v="${t.id}">${esc(t.name)}</button>`).join('')}<button class="chip ${!s.tch ? 'on' : ''}" data-a="assignSet" data-s="${s.id}" data-v="">Not assigned</button></div>`;
+  const assigned = students.filter(s => s.tch && teachers.some(t => t.id === s.tch)).length;
+  const sections = teachers.map(t => {
+    const list = students.filter(s => s.tch === t.id);
+    return `<div class="sec"><h3>${esc(t.name)} · ${list.length}</h3></div>
+      <div class="card">${list.length ? list.map(s => `<div class="li" style="cursor:default;flex-wrap:wrap"><div class="grow"><b>${esc(s.name)}</b><div class="sub">${esc(clsName(s.cls) || s.level || '')}</div></div></div>${chipsFor(s)}`).join('<div style="height:10px"></div>') : '<div class="sub">No students with this teacher yet.</div>'}</div>`;
+  }).join('');
+  const unassigned = students.filter(s => !s.tch || !teachers.some(t => t.id === s.tch));
+  return `<div class="between"><h1>Assign teachers</h1></div>
+  <div class="sub" style="margin-bottom:10px">${assigned} of ${students.length} students have a teacher. Tap a teacher under a student to assign them.</div>
+  ${sections}
+  <div class="sec"><h3>Not assigned · ${unassigned.length}</h3></div>
+  <div class="card">${unassigned.length ? unassigned.map(s => `<div class="li" style="cursor:default;flex-wrap:wrap"><div class="grow"><b>${esc(s.name)}</b><div class="sub">${esc(clsName(s.cls) || s.level || '')}</div></div></div>${chipsFor(s)}`).join('<div style="height:10px"></div>') : '<div class="sub">Every student has a teacher.</div>'}</div>`;
+}
+ACT.assignSet = d => {
+  const st = DB.students.find(x => x.id === d.s); if (!st) return;
+  st.tch = d.v || ''; save(); render();
+};
+(function () {
+  const prevRoute = routeMain;
+  routeMain = function () { if ((cur() || '') === 'assignTch') return vAssign(); return prevRoute(); };
+  Object.assign(TOP_TITLE, { assignTch: 'Assign teachers' });
+  const prevStudents = vStudents;
+  vStudents = function () {
+    return prevStudents().replace(/<button class="btn ghost sm" data-a="stack" data-v="distribute">Share to teachers<\/button>/, '<button class="btn ghost sm" data-a="stack" data-v="assignTch">Assign teachers</button>')
+      .replace(/Tap Share to teachers\./g, 'Tap Add.').replace(/Share to teachers/g, 'Assign teachers');
   };
 })();
 
