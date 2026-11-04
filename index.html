@@ -5446,7 +5446,6 @@ stRow = function (s) {
   const origTT = vTeacherTT;
   vTeacherTT = function () {
     const T = ttTeach();
-    T.cols.forEach((c, i) => { if (DB.teachers[i]) T.cols[i] = DB.teachers[i].name; });
     return origTT();
   };
   CHANGE_VAL.ttTcol = el => {
@@ -5759,24 +5758,8 @@ Object.assign(CHANGE, {
   }
 });
 
-/* ==================== Teacher timetable: each teacher's column lists their distributed students in every period (read-only) ==================== */
-function teacherForCol(ci) {
-  const T = ttTeach();
-  const byName = DB.teachers.find(t => normName(t.name) === normName(T.cols[ci]));
-  return byName || DB.teachers[ci] || null;
-}
-(function () {
-  const prevTeacherTT = vTeacherTT;
-  vTeacherTT = function () {
-    const html = prevTeacherTT();
-    return html.replace(/<textarea data-in="ttTcell" data-r="(\d+)" data-c="(\d+)"([^>]*)>([\s\S]*?)<\/textarea>/g, (m, r, c, attrs) => {
-      const t = teacherForCol(+c);
-      const names = t ? DB.students.filter(s => s.tch === t.id).map(s => s.name).sort((a, b) => a.localeCompare(b)) : [];
-      const body = names.map(n => esc(n)).join('\n');
-      return `<textarea readonly data-r="${r}" data-c="${c}"${attrs.replace('data-in="ttTcell"', '')}>${body}</textarea>`;
-    });
-  };
-})();
+/* Teacher cells come from the imported timetable and stay editable (the earlier read-only override is retired). */
+function teacherForCol(ci) { return teacherByHeader(ttTeach().cols[ci]); }
 
 /* ==================== Attendance: tap the same mark again to clear it; clear all marks for the day ==================== */
 ACT.mark = d => {
@@ -5972,6 +5955,81 @@ function fileErr(e) {
   if (e && e.message === 'not a word document') return 'This Word file could not be read. Save it as .docx, or copy the list into Excel and save as .xlsx.';
   return 'Could not read that file. Save it as .xlsx, .csv or .docx and try again.';
 }
+
+/* ==================== Timetable in the same format as the file: teachers, periods and names per cell; cells stay editable ==================== */
+function levenshtein(a, b) {
+  const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[n];
+}
+const normTeacher = v => String(v || '').toLowerCase().replace(/\b(miss|sir|mrs|mr|ms|ustaz|ustazaa|ustaadh)\b/g, '').replace(/[^a-z]/g, '');
+function teacherByHeader(h) {
+  if (!h) return null;
+  const exact = DB.teachers.find(t => normName(t.name) === normName(h));
+  if (exact) return exact;
+  const k = normTeacher(h); if (!k) return null;
+  let best = null, bd = 99;
+  DB.teachers.forEach(t => { const d = levenshtein(k, normTeacher(t.name)); if (d < bd) { bd = d; best = t; } });
+  // short names must match exactly, so that e.g. 'Saha' and 'Sama' stay two teachers
+  const limit = k.length >= 6 ? 1 : 0;
+  return bd <= limit ? best : null;
+}
+/* Names in a cell: "Maan (LKG D) / Arushal (5A)" or "Raamin (3B) Mufthee (3B)" */
+function extractNames(text) {
+  const out = []; const src = String(text || '');
+  const rest = src.replace(/([^()\/\n,;]+?)\s*\(([^)]*)\)/g, (m, n) => { const nm = n.trim(); if (nm) out.push(nm); return ' '; });
+  rest.split(/[\/\n,;]+/).map(x => x.trim()).filter(x => x.length > 1 && !/home school/i.test(x)).forEach(x => out.push(x));
+  return out.map(x => x.replace(/^[A-Za-z]\.\s*/, '').trim()).filter(Boolean);
+}
+function findStudentByName(name) {
+  const k = normName(name);
+  return DB.students.find(s => normName(s.name) === k)
+    || DB.students.find(s => normName(s.name).startsWith(k + ' '))
+    || DB.students.find(s => { const last = k.split(' ').pop(); return last.length > 2 && normName(s.name).split(' ').pop() === last; });
+}
+function timetableMatches() {
+  const T = ttTeach(); const out = [];
+  Object.keys(T.cells || {}).forEach(k => {
+    const [, c] = k.split('|').map(Number);
+    const t = teacherForCol(c); if (!t) return;
+    extractNames(T.cells[k]).forEach(name => out.push({ name, tid: t.id }));
+  });
+  return out;
+}
+ACT.ttDistribute = () => {
+  const hits = timetableMatches();
+  let n = 0; const missing = new Set(), clash = new Set(), done = new Set();
+  hits.forEach(h => {
+    const st = findStudentByName(h.name);
+    if (!st) { missing.add(h.name); return; }
+    if (done.has(st.id)) { if (st.tch !== h.tid) clash.add(st.name); return; }
+    done.add(st.id); st.tch = h.tid; n++;
+  });
+  save();
+  toast('Distributed ' + n + ' students' + (missing.size ? ' · ' + missing.size + ' names not found' : '') + (clash.size ? ' · ' + clash.size + ' listed under two teachers (kept the first)' : ''));
+  render();
+};
+/* Import: the file's teachers, periods and names. Teachers not in the app are added. */
+CHANGE.ttImport = async el => {
+  const f = el.files && el.files[0]; if (!f) return;
+  toast('Reading ' + f.name + '…');
+  try {
+    const res = timetableFromRows(await fileRows(f));
+    if (res.error) { toast(res.error); return; }
+    const T = ttTeach();
+    T.cols = res.cols; T.rows = res.rows; T.cells = res.cells;
+    let added = 0;
+    res.cols.forEach(h => { if (!teacherByHeader(h)) { DB.teachers.push({ id: uid(), name: h, role: 'Teacher' }); added++; } });
+    save();
+    toast('Timetable imported: ' + res.rows.length + ' periods, ' + res.cols.length + ' teachers' + (added ? ' (' + added + ' added)' : ''));
+  } catch (e) { toast(fileErr(e)); }
+  render();
+};
 
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
