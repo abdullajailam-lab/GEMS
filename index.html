@@ -6648,6 +6648,20 @@ function drawIcon(size, theme) {
 }
 APP_SEAL.onload = () => { if (typeof setAppIcon === 'function') setAppIcon(true); };
 
+/* ==================== Goal picker: the library's Dhivehi indicators (and English, Mathematics) are added so every student can choose them ==================== */
+(function syncLibraryIndicators() {
+  const src = (DB.rbLib && DB.rbLib.subjects) || (typeof RB_DATA !== 'undefined' && RB_DATA.subjects) || {};
+  DB.custom = DB.custom || [];
+  let added = 0;
+  ['Dhivehi', 'English', 'Mathematics'].forEach(sub => {
+    (src[sub] || []).forEach((text, i) => {
+      const id = 'lib-' + sub.slice(0, 2).toLowerCase() + '-' + i;
+      if (!DB.custom.some(x => x.id === id)) { DB.custom.push({ id, subj: sub, text: String(text) }); added++; }
+    });
+  });
+  if (added) save();
+})();
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
