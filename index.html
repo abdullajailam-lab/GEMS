@@ -6632,6 +6632,22 @@ vSignInPage = function () {
 }
 ;
 
+/* ==================== App icon: the school seal on a white rounded square (home screen and app manifest) ==================== */
+const APP_SEAL = new Image();
+APP_SEAL.src = 'data:image/png;base64,' + RB_LOGO_B64;
+function drawIcon(size, theme) {
+  const cv = document.createElement('canvas'); cv.width = size; cv.height = size;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#FFFFFF';
+  c.beginPath(); c.roundRect ? c.roundRect(0, 0, size, size, size * 0.22) : c.rect(0, 0, size, size); c.fill();
+  if (APP_SEAL.complete && APP_SEAL.naturalWidth) {
+    const pad = size * 0.1;
+    c.drawImage(APP_SEAL, pad, pad, size - 2 * pad, size - 2 * pad);
+  }
+  return cv.toDataURL('image/png');
+}
+APP_SEAL.onload = () => { if (typeof setAppIcon === 'function') setAppIcon(true); };
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
