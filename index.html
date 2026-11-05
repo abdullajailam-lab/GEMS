@@ -972,6 +972,10 @@ body #splash{background:#FFFFFF!important;background-image:none!important}
 #splash .op-title{animation:opRise .6s ease 1.0s both}
 #splash .op-sub{animation:opRise .6s ease 1.2s both}
 @keyframes softIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+/* ==================== Alignment: report cards keep their icon inside the card; Dhivehi text reads right-to-left ==================== */
+.card.li{margin-left:0!important;margin-right:0!important;box-sizing:border-box}
+.card.li > .ico{margin-left:0!important}
+.gi[dir="rtl"] input[type="checkbox"]{margin:0 0 0 10px}
 </style>
 </head>
 
@@ -6676,7 +6680,10 @@ function transformGoalPicker(html) {
   const sub = S.gpSub && GOAL_SUBJECTS.includes(S.gpSub) ? S.gpSub : 'English';
   const chips = `<div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 12px">${GOAL_SUBJECTS.map(s => `<button class="chip ${s === sub ? 'on' : ''}" data-a="gpSub" data-v="${s}">${s}</button>`).join('')}</div>`;
   const items = [...IND, ...DB.custom].filter(x => x.subj === sub);
-  const list = items.map(x => `<label class="gi"><input type="checkbox" data-a="goalTog" data-v="${x.id}" ${checked.has(x.id) ? 'checked' : ''}><span>${esc(x.text)}</span></label>`).join('') || `<div class="sub" style="padding:8px 0">No ${sub} indicators yet.</div>`;
+  const rtl = sub === 'Dhivehi';
+  const list = items.map(x => rtl
+    ? `<label class="gi" dir="rtl" lang="dv" style="flex-direction:row-reverse;text-align:right;justify-content:flex-start"><input type="checkbox" data-a="goalTog" data-v="${x.id}" ${checked.has(x.id) ? 'checked' : ''}><span class="dv" style="text-align:right;font-family:'Noto Sans Thaana',Figtree,sans-serif;line-height:1.9">${esc(x.text)}</span></label>`
+    : `<label class="gi"><input type="checkbox" data-a="goalTog" data-v="${x.id}" ${checked.has(x.id) ? 'checked' : ''}><span>${esc(x.text)}</span></label>`).join('') || `<div class="sub" style="padding:8px 0">No ${sub} indicators yet.</div>`;
   const add = `<div style="margin-top:12px"><button class="btn ghost sm" data-a="gpAdd" data-v="${sub}">+ Add ${sub} indicator</button></div>`;
   return html.replace(m[0], `<div class="gl">${chips}${list}${add}</div></details>`);
 }
