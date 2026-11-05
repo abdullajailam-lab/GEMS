@@ -6703,6 +6703,56 @@ ACT.gpAdd = d => {
   save(); toast('Indicator added to ' + d.v); render();
 };
 
+/* ==================== Marking: uses a free Gemini key when Claude is not available on this page ==================== */
+const GEMINI_MODEL = 'gemini-2.0-flash';
+async function fileToDataUrl(f) {
+  if (typeof f === 'string') return f;
+  return await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+}
+async function askGemini(prompt, files) {
+  const parts = [{ text: prompt }];
+  for (const f of (files || [])) {
+    const m = /^data:([^;]+);base64,(.*)$/.exec(await fileToDataUrl(f));
+    if (m) parts.push({ inline_data: { mime_type: m[1], data: m[2] } });
+  }
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + encodeURIComponent(DB.aiKey), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts }] })
+  });
+  if (res.status === 400 || res.status === 403) throw coded('key', 'The AI key was rejected.');
+  if (!res.ok) throw coded('ai', 'AI error ' + res.status);
+  const data = await res.json();
+  const cand = data.candidates && data.candidates[0];
+  return cand && cand.content ? cand.content.parts.map(p => p.text || '').join('') : '';
+}
+async function askClaude(prompt, files, tier, signal) {
+  let s = null;
+  try { s = window.claude ? await window.claude.use('sample') : null; } catch (e) { s = null; }
+  if (!s) {
+    if (DB.aiKey) return askGemini(prompt, files);
+    throw coded('unavailable');
+  }
+  let lim = {};
+  try { lim = await s.limits(); } catch (e) {}
+  if (files && (!lim || !lim.images)) throw coded('images_unavailable');
+  const opts = { modelTier: tier || 'default', cache: false };
+  if (files) opts.images = files;
+  if (signal) opts.signal = signal;
+  const r = await s(prompt, opts);
+  return r.text || '';
+}
+ACT.setAIKey = () => {
+  const k = prompt('Paste your free Gemini API key (from aistudio.google.com)', DB.aiKey || '');
+  if (k === null) return;
+  DB.aiKey = k.trim(); save(); toast(DB.aiKey ? 'AI key saved on this device' : 'AI key removed'); render();
+};
+(function () {
+  const prevMark = vMark;
+  vMark = function () {
+    const status = DB.aiKey ? 'A free AI key is saved on this device.' : 'Set a free AI key to mark work on this website.';
+    return prevMark() + `<div class="card" style="margin-top:12px"><div class="f" style="margin-top:0">Free AI for marking</div><div class="sub" style="margin:4px 0 10px">${status}</div><div class="row"><button class="btn ghost sm" data-a="setAIKey">${DB.aiKey ? 'Change key' : 'Set free AI key'}</button></div></div>`;
+  };
+})();
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
