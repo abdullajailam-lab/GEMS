@@ -6662,6 +6662,40 @@ APP_SEAL.onload = () => { if (typeof setAppIcon === 'function') setAppIcon(true)
   if (added) save();
 })();
 
+/* ==================== Learning goals: choose a subject (English, Mathematics, Dhivehi) to see only its indicators; Add a new indicator for that subject ==================== */
+const GOAL_SUBJECTS = ['English', 'Mathematics', 'Dhivehi'];
+function transformGoalPicker(html) {
+  const re = /<div class="gl">([\s\S]*?)<\/div><\/details>/;
+  const m = html.match(re);
+  if (!m) return html;
+  const checked = new Set();
+  (m[1].match(/<input[^>]*data-v="[^"]+"[^>]*>/g) || []).forEach(tag => {
+    const id = (tag.match(/data-v="([^"]+)"/) || [])[1];
+    if (id && /\schecked/.test(tag)) checked.add(id);
+  });
+  const sub = S.gpSub && GOAL_SUBJECTS.includes(S.gpSub) ? S.gpSub : 'English';
+  const chips = `<div style="display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 12px">${GOAL_SUBJECTS.map(s => `<button class="chip ${s === sub ? 'on' : ''}" data-a="gpSub" data-v="${s}">${s}</button>`).join('')}</div>`;
+  const items = [...IND, ...DB.custom].filter(x => x.subj === sub);
+  const list = items.map(x => `<label class="gi"><input type="checkbox" data-a="goalTog" data-v="${x.id}" ${checked.has(x.id) ? 'checked' : ''}><span>${esc(x.text)}</span></label>`).join('') || `<div class="sub" style="padding:8px 0">No ${sub} indicators yet.</div>`;
+  const add = `<div style="margin-top:12px"><button class="btn ghost sm" data-a="gpAdd" data-v="${sub}">+ Add ${sub} indicator</button></div>`;
+  return html.replace(m[0], `<div class="gl">${chips}${list}${add}</div></details>`);
+}
+(function () {
+  const prevRoute = routeMain;
+  routeMain = function () {
+    const out = prevRoute();
+    return typeof out === 'string' && out.includes('<details class="gp">') ? transformGoalPicker(out) : out;
+  };
+})();
+ACT.gpSub = d => { keepForm(); S.gpSub = d.v; render(); };
+ACT.gpAdd = d => {
+  const text = prompt('New ' + d.v + ' indicator');
+  if (!text || !text.trim()) return;
+  keepForm();
+  DB.custom.push({ id: 'cu' + uid(), subj: d.v, text: text.trim() });
+  save(); toast('Indicator added to ' + d.v); render();
+};
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
