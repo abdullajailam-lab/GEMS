@@ -6987,6 +6987,59 @@ ACT.achSet = d => {
   save(); render();
 };
 
+/* ==================== Lesson plan: tick which students are in the plan. The register shows only those students. ==================== */
+(function () {
+  const basePlanNew = vPlanNew;
+  vPlanNew = function () {
+    const html = basePlanNew();
+    const d = S.draft && S.draft.plan; if (!d) return html;
+    const group = d.tid ? teacherStudents(d.tid) : studentsIn(d.cls);
+    if (!Array.isArray(d.sids)) d.sids = group.map(s => s.id);
+    const section = `<div class="f" style="margin-top:14px">Students in this plan <span class="sub">(${d.sids.filter(id => group.some(s => s.id === id)).length} of ${group.length})</span></div>
+      <div class="pn-list">${group.map(s => { const on = d.sids.includes(s.id); return `<button class="pn-ind ${on ? 'on' : ''}" data-a="pnSid" data-v="${s.id}"><span class="pn-tick">${on ? '✓' : ''}</span><span>${esc(s.name)}</span></button>`; }).join('') || '<div class="sub">No students in this group.</div>'}</div>
+      <div class="row" style="gap:8px;margin-bottom:10px"><button class="btn ghost sm" data-a="pnSidAll">Select all</button><button class="btn ghost sm" data-a="pnSidNone">Clear</button></div>`;
+    return html.replace('<label class="f">Topic', section + '<label class="f">Topic');
+  };
+})();
+ACT.pnTid = d => { keepForm(); const p = S.draft.plan; p.tid = d.v; p.sids = teacherStudents(d.v).map(s => s.id); render(); };
+ACT.pnSid = d => { keepForm(); const p = S.draft.plan; p.sids = p.sids || []; const i = p.sids.indexOf(d.v); if (i >= 0) p.sids.splice(i, 1); else p.sids.push(d.v); render(); };
+ACT.pnSidAll = () => { keepForm(); const p = S.draft.plan; p.sids = (p.tid ? teacherStudents(p.tid) : studentsIn(p.cls)).map(s => s.id); render(); };
+ACT.pnSidNone = () => { keepForm(); S.draft.plan.sids = []; render(); };
+ACT.pnCreate = () => {
+  keepForm();
+  const p = S.draft && S.draft.plan;
+  if (!p || !(p.inds || []).length) return toast('Choose at least one indicator.');
+  const cls = p.cls || (DB.classes[0] && DB.classes[0].id);
+  const sids = (p.sids || []).filter(id => DB.students.some(s => s.id === id));
+  if (!sids.length) return toast('Choose at least one student.');
+  const pl = buildPlan(cls, p.subj, p.inds[0], p.min, p.date);
+  pl.inds = p.inds.slice();
+  pl.objective = planIndicatorItems(pl).map(x => x.text).join('\n');
+  pl.ach = {}; pl.sids = sids;
+  pl.topic = p.topic || ''; pl.week = p.week || ''; pl.quarter = p.quarter || ''; pl.assess = p.assess || PLAN_DEFAULTS.assess; pl.res = p.res || PLAN_DEFAULTS.res;
+  pl.dateTo = planDateTo(p.date);
+  if (p.tid) { pl.tid = p.tid; pl.title = (p.topic || pl.title || 'Lesson plan') + ' · ' + (teacherName(p.tid) || 'Teacher'); }
+  DB.plans.push(pl); save(); S.draft = null; S.stack.pop(); S.stack.push('plan:' + pl.id);
+  burst(); toast('Lesson plan saved for ' + sids.length + ' students'); render();
+};
+vPlanAchievement = function (p) {
+  const group = p.sids && p.sids.length
+    ? p.sids.map(id => DB.students.find(s => s.id === id)).filter(Boolean)
+    : (p.tid ? teacherStudents(p.tid) : studentsIn(p.cls));
+  const inds = planIndicatorItems(p);
+  const ach = p.ach || {};
+  S.achOpen = S.achOpen || {};
+  const rated = group.filter(s => ach[s.id] && Object.keys(ach[s.id]).length).length;
+  const rows = group.map(s => {
+    const sa = ach[s.id] || {};
+    const open = !!S.achOpen[s.id];
+    const body = inds.map(x => `<div class="ach-ind"><div class="ach-txt">${esc(x.text)}</div><div class="ach-seg">${ACH_LEVELS.map(([v, t]) => `<button class="${sa[x.id] === v ? 'on' : ''}" title="${t}" data-a="achSet" data-id="${p.id}" data-s="${s.id}" data-i="${x.id}" data-v="${v}">${v}</button>`).join('')}</div></div>`).join('') || '<div class="sub">No indicators chosen.</div>';
+    return `<div class="ach-stu"><button class="ach-head" data-a="achToggle" data-s="${s.id}"><b>${esc(s.name)}</b><span class="sub">${Object.keys(sa).length} of ${inds.length} rated ${open ? '▴' : '▾'}</span></button>${open ? `<div class="ach-body">${body}</div>` : ''}</div>`;
+  }).join('');
+  return `<div class="sec"><h3>Achievement · ${rated} of ${group.length} students rated</h3></div>
+  <div class="card">${group.length ? rows : '<div class="sub">No students in this plan.</div>'}</div>`;
+};
+
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
 function renderTop() {
