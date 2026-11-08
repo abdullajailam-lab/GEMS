@@ -1120,6 +1120,15 @@ body #splash{background:#FFFFFF!important;background-image:none!important;displa
 .pn-sub{display:flex;align-items:flex-start;gap:8px;text-align:start;padding:7px 9px;border-radius:10px;border:1px dashed var(--line);background:#fff;color:var(--muted);font-size:12.5px;line-height:1.35}
 .pn-sub.on{border-style:solid;border-color:#9FB6DA;color:var(--ink);background:#F5F8FD}
 .pn-sub .pn-tick{flex:0 0 16px;width:16px;height:16px;font-size:10px}
+/* ==================== No zoom when tapping a field: text fields are 16px ==================== */
+input,select,textarea{font-size:16px!important}
+/* ==================== Students: all names list ==================== */
+.all-st{margin-bottom:12px}
+.all-names{margin:8px 0 0;padding-left:22px;font-size:14px;line-height:1.7;color:var(--ink)}
+/* ==================== Settings lock screen ==================== */
+.lock-card{text-align:center;padding:22px 18px}
+.lock-ico{width:56px;height:56px;margin:0 auto;border-radius:18px;background:#EEF3FB;color:var(--navy);display:grid;place-items:center}
+.pin-in{margin-top:16px;text-align:center;letter-spacing:.5em;font-size:22px!important;font-weight:700}
 </style>
 </head>
 
@@ -7202,6 +7211,54 @@ vPlanNew = function () {
   </div>`;
 };
 ACT.pnIndToggle = () => { keepForm(); S.pnIndOpen = !S.pnIndOpen; render(); };
+
+/* ==================== Students: one list of every student's name with the total ==================== */
+(function () {
+  const prevDraw = drawStList;
+  drawStList = function () {
+    prevDraw();
+    if (S.q) return;
+    const el = $('#stList'); if (!el) return;
+    const all = [...DB.students].sort(byStudentName);
+    el.insertAdjacentHTML('afterbegin', `<div class="card all-st"><div class="between"><b>All students</b><span class="sub">${all.length} total</span></div>${all.length ? `<ol class="all-names">${all.map(s => `<li>${esc(s.name)}</li>`).join('')}</ol>` : '<div class="sub" style="padding:8px 0">No students yet.</div>'}</div>`);
+  };
+})();
+
+/* ==================== Settings lock: the code 5252 is needed every time Settings is opened ==================== */
+const SETTINGS_CODE = '5252';
+(function () {
+  const prevPush = push;
+  push = function (v) {
+    if (v === 'settings') return prevPush('settingsLock');
+    return prevPush(v);
+  };
+  const prevRoute = routeMain;
+  routeMain = function () {
+    if (cur() === 'settingsLock') return vSettingsLock();
+    return prevRoute();
+  };
+})();
+function vSettingsLock() {
+  return `<div class="between"><h1>Settings</h1></div>
+  <div class="card lock-card">
+    <div class="lock-ico">${ico('lock', 26) || '🔒'}</div>
+    <div class="f" style="margin-top:6px;text-align:center">Enter the Settings code</div>
+    <div class="sub" style="text-align:center;margin-top:4px">Settings are locked.</div>
+    <input id="set_pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off" class="pin-in">
+    <button class="btn full" data-a="pinCheck" style="margin-top:12px">Unlock</button>
+  </div>`;
+}
+ACT.pinCheck = () => {
+  const v = ((document.getElementById('set_pin') || {}).value || '').trim();
+  if (v === SETTINGS_CODE) {
+    S.stack.pop();
+    S.stack.push('settings');
+    render();
+  } else {
+    toast('Wrong code');
+    const el = document.getElementById('set_pin'); if (el) { el.value = ''; el.focus(); }
+  }
+};
 
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
