@@ -1099,6 +1099,27 @@ body #splash{background:#FFFFFF!important;background-image:none!important;displa
 .pn-sub .pn-tick{width:18px;height:18px;flex:0 0 18px;font-size:11px}
 /* ==================== Report book on screen: pages keep their normal size (the full-sheet fill is for printing) ==================== */
 #rbOverlay .rb-doc .pg{min-height:0;display:block}
+/* ==================== New lesson plan form: organised ==================== */
+.pn-form{padding:6px 16px 16px}
+.pn-sec{padding:14px 0;border-bottom:1px solid var(--line)}
+.pn-sec:last-of-type{border-bottom:0}
+.pn-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.pn-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.pn-row .chip{flex:0 0 auto}
+.pn-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pn-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.pn-chip{display:flex;align-items:flex-start;gap:8px;text-align:start;padding:9px 10px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:12.5px;line-height:1.35}
+.pn-chip.on{border-color:var(--navy);background:#EEF3FB}
+.pn-chip .pn-tick{flex:0 0 16px;width:16px;height:16px;font-size:10px}
+.pn-list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.pn-stu-h{display:flex;align-items:center;gap:10px;width:100%;text-align:start;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:14px}
+.pn-stu-h.on{border-color:var(--navy);background:#EEF3FB}
+.pn-stu-h .pn-tick{flex:0 0 20px;width:20px;height:20px}
+.pn-stu{margin-bottom:2px}
+.pn-subs{display:flex;flex-direction:column;gap:6px;padding:6px 0 4px 14px}
+.pn-sub{display:flex;align-items:flex-start;gap:8px;text-align:start;padding:7px 9px;border-radius:10px;border:1px dashed var(--line);background:#fff;color:var(--muted);font-size:12.5px;line-height:1.35}
+.pn-sub.on{border-style:solid;border-color:#9FB6DA;color:var(--ink);background:#F5F8FD}
+.pn-sub .pn-tick{flex:0 0 16px;width:16px;height:16px;font-size:10px}
 </style>
 </head>
 
@@ -7129,6 +7150,56 @@ vPlanAchievement = function (p) {
   return `<div class="sec"><h3>Achievement · ${rated} of ${group.length} students rated</h3></div>
   <div class="card">${group.length ? rows : '<div class="sub">No students in this plan.</div>'}</div>`;
 };
+
+/* ==================== New lesson plan form: students first, indicators in a compact picker that opens on demand, tidy rows ==================== */
+vPlanNew = function () {
+  const d = S.draft && S.draft.plan ? S.draft.plan : (S.draft = { plan: Object.assign({ cls: S.cls, subj: 'English', inds: [], sids: null, stuOff: {}, min: 45, date: today(), tid: DB.teachers[0] ? DB.teachers[0].id : '' }, PLAN_DEFAULTS) }).plan;
+  if (!d.inds) d.inds = [];
+  if (!d.stuOff) d.stuOff = {};
+  if (!d.tid && DB.teachers[0]) d.tid = DB.teachers[0].id;
+  Object.keys(PLAN_DEFAULTS).forEach(k => { if (d[k] === undefined) d[k] = PLAN_DEFAULTS[k]; });
+  const group = d.tid ? teacherStudents(d.tid) : studentsIn(d.cls);
+  if (!Array.isArray(d.sids)) d.sids = group.map(s => s.id);
+  const picked = d.sids.filter(id => group.some(s => s.id === id)).length;
+  const teachers = DB.teachers.length
+    ? `<div class="pn-row">${DB.teachers.map(t => `<button class="chip ${t.id === d.tid ? 'on' : ''}" data-a="pnTid" data-v="${t.id}">${esc(t.name)}</button>`).join('')}</div>`
+    : '<div class="sub">Add teachers first.</div>';
+  const subjects = `<div class="pn-row">${DB.subjects.map(s => `<button class="chip ${s === d.subj ? 'on' : ''}" data-a="pnSubj" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;
+  const indItems = [...IND, ...DB.custom].filter(x => x.subj === d.subj);
+  const indGrid = indItems.map(x => { const on = d.inds.includes(x.id); return `<button class="pn-chip ${on ? 'on' : ''}" data-a="pnInd" data-v="${x.id}"><span class="pn-tick">${on ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`; }).join('') || `<div class="sub">No ${esc(d.subj)} indicators yet.</div>`;
+  const indPicker = S.pnIndOpen ? `<div class="pn-grid">${indGrid}</div>` : '';
+  const studentRows = group.map(s => {
+    const on = d.sids.includes(s.id);
+    if (!on) return `<div class="pn-stu"><button class="pn-stu-h" data-a="pnSid" data-v="${s.id}"><span class="pn-tick"></span><span>${esc(s.name)}</span></button></div>`;
+    const off = d.stuOff[s.id] || [];
+    const subs = d.inds.map(id => { const x = indById(id); if (!x) return ''; const t = !off.includes(id); return `<button class="pn-sub ${t ? 'on' : ''}" data-a="pnStuInd" data-s="${s.id}" data-i="${id}"><span class="pn-tick">${t ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`; }).join('') || '<div class="sub" style="padding:4px 0">Choose indicators first.</div>';
+    return `<div class="pn-stu"><button class="pn-stu-h on" data-a="pnSid" data-v="${s.id}"><span class="pn-tick">✓</span><span>${esc(s.name)}</span></button><div class="pn-subs">${subs}</div></div>`;
+  }).join('') || '<div class="sub">No students in this group.</div>';
+  return `<div class="between"><h1>New lesson plan</h1></div>
+  <div class="card pn-form">
+    <div class="pn-sec"><div class="f">Teacher group</div>${teachers}<div class="sub" style="margin-top:6px">${group.length} student${group.length === 1 ? '' : 's'} in this group.</div></div>
+    <div class="pn-sec"><div class="f">Subject</div>${subjects}</div>
+    <div class="pn-sec">
+      <div class="pn-head"><div class="f">Indicators <span class="sub">(${d.inds.length} chosen)</span></div><button class="btn ghost sm" data-a="pnIndToggle">${S.pnIndOpen ? 'Done' : 'Choose indicators'}</button></div>
+      ${indPicker}
+    </div>
+    <div class="pn-sec"><div class="pn-head"><div class="f">Students and their indicators</div><span class="sub">${picked} of ${group.length}</span></div>
+      <div class="pn-list">${studentRows}</div>
+      <div class="pn-row" style="margin-top:8px"><button class="btn ghost sm" data-a="pnSidAll">Select all</button><button class="btn ghost sm" data-a="pnSidNone">Clear</button></div>
+    </div>
+    <div class="pn-sec">
+      <label class="f">Topic<input id="f_topic" value="${esc(d.topic)}" placeholder="e.g. Living things"></label>
+      <div class="pn-two"><label class="f">Quarter<input id="f_quarter" value="${esc(d.quarter)}"></label><label class="f">Week<input id="f_week" value="${esc(d.week)}"></label></div>
+      <label class="f">Date from (saved with the plan)<input id="f_pd" type="date" value="${d.date}"></label>
+      <div class="f" style="margin-top:12px">Duration</div>
+      <div class="seg" style="margin-top:6px">${[30, 45, 60].map(m => `<button class="${m === d.min ? 'on' : ''}" data-a="pnMin" data-v="${m}">${m} min</button>`).join('')}</div>
+      <label class="f">Assessment tools<input id="f_assess" value="${esc(d.assess)}"></label>
+      <label class="f">Teaching resources<input id="f_res" value="${esc(d.res)}"></label>
+    </div>
+    <div style="margin-top:16px"><button class="btn full" data-a="pnCreate">Save lesson plan</button></div>
+  </div>`;
+};
+ACT.pnIndToggle = () => { keepForm(); S.pnIndOpen = !S.pnIndOpen; render(); };
 
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
