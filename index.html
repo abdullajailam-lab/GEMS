@@ -1029,6 +1029,8 @@ body #splash{background:#FFFFFF!important;background-image:none!important;displa
 .card.li{display:flex!important;align-items:center!important;gap:14px!important;padding:14px 16px!important;margin:0 0 12px 0!important;box-sizing:border-box!important}
 .card.li > .ico{margin:0!important;flex:0 0 40px!important}
 .card.li > .grow{flex:1 1 auto;min-width:0}
+/* ==================== Attendance: Mainstream (M) mark ==================== */
+.seg button.on.M{background:#2D5BA8;color:#fff}
 </style>
 </head>
 
@@ -5610,7 +5612,7 @@ function vAttendTeacher() {
   const tid = S.attT || '';
   const list = teacherStudents(tid);
   const key = S.date + '|T:' + tid, rec = DB.att[key] || {};
-  const c = { P: 0, L: 0, A: 0 }; list.forEach(s => { if (rec[s.id]) c[rec[s.id]]++; });
+  const c = { P: 0, L: 0, A: 0, M: 0 }; list.forEach(s => { if (rec[s.id]) c[rec[s.id]]++; });
   const marked = c.P + c.L + c.A;
   const isToday = S.date === today();
   const chips = DB.teachers.length
@@ -5621,15 +5623,15 @@ function vAttendTeacher() {
   <div class="card" style="padding:12px"><div class="between">
     <div class="stepper"><button data-a="dayStep" data-v="-1" aria-label="Previous day">‹</button><b style="min-width:150px;text-align:center">${esc(fmtD(S.date, { weekday: 'short', month: 'short', day: 'numeric' }))}</b><button data-a="dayStep" data-v="1" aria-label="Next day">›</button></div>
     ${isToday ? '<span class="tag ok">Today</span>' : '<button class="lnk" data-a="dayToday">Today</button>'}</div></div>
-  <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+  <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
     <div class="kpi"><b style="color:#17754F">${c.P}</b><span>Present</span></div>
     <div class="kpi"><b style="color:#8A5B07">${c.L}</b><span>Late</span></div>
-    <div class="kpi"><b style="color:#A52E2E">${c.A}</b><span>Absent</span></div></div>
+    <div class="kpi"><b style="color:#A52E2E">${c.A}</b><span>Absent</span></div><div class="kpi"><b style="color:#2D5BA8">${c.M}</b><span>Mainstream</span></div></div>
   <div class="row" style="margin-bottom:10px;justify-content:space-between"><span class="sub">${marked} of ${list.length} marked</span><button class="btn ghost sm" data-a="markAll" ${list.length ? '' : 'disabled'}>Mark all present</button></div>
   <div class="card">${list.length ? list.map(s => `<div class="li" style="cursor:default">
     <div class="av" style="background:${levelColor(s.level)}">${esc(initials(s.name))}</div>
     <div class="grow"><b>${esc(s.name)}</b><div class="sub">${esc(s.acad || s.level || '')}</div></div>
-    <div class="seg" style="grid-auto-columns:auto">${[['P', 'P'], ['L', 'L'], ['A', 'A']].map(([v, l]) => `<button class="${rec[s.id] === v ? 'on ' + v : ''}" data-a="mark" data-id="${s.id}" data-v="${v}" style="min-width:44px">${l}</button>`).join('')}</div></div>`).join('') : '<div class="empty">No students under this teacher yet. Share students in Auto-group.</div>'}</div>
+    <div class="seg" style="grid-auto-columns:auto">${[['P', 'P'], ['L', 'L'], ['A', 'A'], ['M', 'M']].map(([v, l]) => `<button class="${rec[s.id] === v ? 'on ' + v : ''}" data-a="mark" data-id="${s.id}" data-v="${v}" style="min-width:44px">${l}</button>`).join('')}</div></div>`).join('') : '<div class="empty">No students under this teacher yet. Share students in Auto-group.</div>'}</div>
   <div class="row" style="margin-top:14px"><button class="btn full" data-a="attSave">Save attendance</button></div>`;
 }
 Object.assign(ACT, {
