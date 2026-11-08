@@ -7212,18 +7212,6 @@ vPlanNew = function () {
 };
 ACT.pnIndToggle = () => { keepForm(); S.pnIndOpen = !S.pnIndOpen; render(); };
 
-/* ==================== Students: one list of every student's name with the total ==================== */
-(function () {
-  const prevDraw = drawStList;
-  drawStList = function () {
-    prevDraw();
-    if (S.q) return;
-    const el = $('#stList'); if (!el) return;
-    const all = [...DB.students].sort(byStudentName);
-    el.insertAdjacentHTML('afterbegin', `<div class="card all-st"><div class="between"><b>All students</b><span class="sub">${all.length} total</span></div>${all.length ? `<ol class="all-names">${all.map(s => `<li>${esc(s.name)}</li>`).join('')}</ol>` : '<div class="sub" style="padding:8px 0">No students yet.</div>'}</div>`);
-  };
-})();
-
 /* ==================== Settings lock: the code 5252 is needed every time Settings is opened ==================== */
 const SETTINGS_CODE = '5252';
 (function () {
@@ -7259,6 +7247,19 @@ ACT.pinCheck = () => {
     const el = document.getElementById('set_pin'); if (el) { el.value = ''; el.focus(); }
   }
 };
+
+/* ==================== All students list moves from the Students screen into Reports ==================== */
+(function () {
+  const prevRoute = routeMain;
+  routeMain = function () {
+    const html = prevRoute();
+    if (cur() !== 'reports') return html;
+    const all = [...DB.students].sort(byStudentName);
+    const card = `<div class="card all-st"><div class="between"><b>All students</b><span class="sub">${all.length} total</span></div>${all.length ? `<ol class="all-names">${all.map(s => `<li>${esc(s.name)}</li>`).join('')}</ol>` : '<div class="sub" style="padding:8px 0">No students yet.</div>'}</div>`;
+    const idx = html.indexOf('<div class="card');
+    return idx >= 0 ? html.slice(0, idx) + card + html.slice(idx) : card + html;
+  };
+})();
 
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
