@@ -976,6 +976,39 @@ body #splash{background:#FFFFFF!important;background-image:none!important}
 .card.li{margin-left:0!important;margin-right:0!important;box-sizing:border-box}
 .card.li > .ico{margin-left:0!important}
 .gi[dir="rtl"] input[type="checkbox"]{margin:0 0 0 10px}
+/* ==================== Laptop fix: indicator rows keep the tick box next to its text ==================== */
+.card label:has(> input[type="checkbox"]){display:flex;align-items:flex-start;gap:12px;justify-content:flex-start;text-align:left}
+.card label > input[type="checkbox"]{flex:0 0 22px;width:22px;height:22px;margin:2px 0 0;justify-self:auto}
+.card label[dir="rtl"]{flex-direction:row-reverse;justify-content:flex-start}
+/* ==================== Laptop fix: opening keeps the phone proportions on wide screens ==================== */
+@media (min-width:700px){
+  #splash .op-wrap{width:min(340px,40vw)!important}
+  #splash .op-seal{width:120px;height:120px}
+  #splash .op-title{font-size:26px}
+  #splash .op-sub{font-size:12px}
+}
+/* ==================== Laptop fix: tick boxes stay small; indicator rows read left-to-right; opening keeps phone proportions ==================== */
+input[type="checkbox"]{width:18px!important;height:18px!important;min-width:18px;flex:0 0 18px;max-width:18px;margin:3px 0 0 0;padding:0}
+.pk-row{align-items:flex-start}
+.pk-row > span{flex:1 1 auto;text-align:start;min-width:0}
+.gi input[type="checkbox"],.gi input{flex:0 0 18px}
+#splash .op-wrap{width:300px!important;max-width:88vw}
+#splash .op-seal{width:96px!important;height:96px!important}
+#splash .op-title{font-size:24px!important}
+#splash .op-sub{font-size:11px!important}
+/* ==================== Opening matches the phone: white screen, fixed sizes, centred, finished within a second, same on every device ==================== */
+body #splash{background:#FFFFFF!important;background-image:none!important;display:flex!important;align-items:center;justify-content:center}
+#splash .op-wrap{width:300px!important;max-width:88vw;display:flex!important;flex-direction:column;align-items:center!important;text-align:center!important;background:transparent!important;box-shadow:none!important;padding:0!important;transform:none!important;animation:none!important}
+#splash .op-wrap::before{display:none!important}
+#splash .op-seal{position:relative;width:150px!important;height:150px!important;margin:0 auto!important;background:transparent!important;box-shadow:none!important;opacity:1!important;transform:none!important;animation:opSeal .5s ease both!important}
+#splash .op-seal::before{display:none!important}
+#splash .op-seal img{width:150px;height:150px}
+#splash .op-title{color:#0B2D5B!important;font-size:26px!important;font-weight:700;margin-top:26px!important;text-align:center!important;clip-path:none!important;opacity:1;animation:opRise .5s ease .3s both!important}
+#splash .op-sub{color:#7A8799!important;font-size:12px!important;letter-spacing:.16em;margin-top:8px!important;text-align:center!important;opacity:1;animation:opRise .5s ease .45s both!important}
+#splash .op-bar{display:none!important}
+@keyframes opSeal{from{opacity:0}to{opacity:1}}
+/* ==================== Header: new subtle diamond lattice pattern ==================== */
+.top::before{background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.07) 0 1px,transparent 1px 22px),repeating-linear-gradient(-45deg,rgba(255,255,255,.07) 0 1px,transparent 1px 22px)!important;background-size:auto!important}
 </style>
 </head>
 
@@ -1870,13 +1903,13 @@ function vEventForm() {
 function vMark() {
   const r = S.lastMark;
   return `<div class="between"><h1>Mark student work</h1></div>
-  <div class="sub" style="margin:4px 0 12px">Upload a photo of the work. Claude reads the name and indicator, marks each step and shows the right answers.</div>
+  <div class="sub" style="margin:4px 0 12px">Upload a photo of the work. The free AI reads the name and indicator, marks each step and shows the right answers.</div>
   <div class="card">
     ${S.markPhoto ? `<img class="photo" src="${S.markPhoto}" alt="Work photo">` : '<div class="empty">No photo yet.</div>'}
     <div class="row" style="margin-top:12px">
       <label class="btn ghost" style="cursor:pointer;flex:1">${ico('camera', 18)}${S.markPhoto ? 'Change photo' : 'Upload photo'}<input type="file" accept="image/*" data-a="markFile" hidden></label>
     </div>
-    <div style="margin-top:10px"><button class="btn full" data-a="markNow" ${S.markFile && !S.markBusy ? '' : 'disabled'}>${S.markBusy ? '<span class="spin"></span>Claude is checking…' : 'Mark with Claude'}</button></div>
+    <div style="margin-top:10px"><button class="btn full" data-a="markNow" ${S.markFile && !S.markBusy ? '' : 'disabled'}>${S.markBusy ? '<span class="spin"></span>Claude is checking…' : 'Mark work'}</button></div>
     <div id="markStatus"></div>
   </div>
   <div id="markOut">${r ? resultView(r) : ''}</div>
@@ -1965,7 +1998,7 @@ function vReports() {
   <div class="card"><h2>Restore from backup</h2><div class="sub">Choose a backup file to replace the data on this device.</div><label class="btn ghost sm" style="cursor:pointer;margin-top:10px">${ico('up', 18)}Choose file<input type="file" accept="application/json" data-a="restore" hidden></label></div>`;
 }
 function vMore() {
-  const items = [['stack', 'calendar', 'Academic calendar', 'Holidays, breaks, exams and your events'], ['stack', 'mark', 'Mark student work', 'Photo marking with Claude'], ['stack', 'plans', 'Lesson plans', 'Create and print plans'], ['stack', 'reports', 'Reports and export', 'Formatted PDFs and backups'], ['stack', 'settings', 'Settings', 'Teachers, groups, levels and subjects']];
+  const items = [['stack', 'calendar', 'Academic calendar', 'Holidays, breaks, exams and your events'], ['stack', 'mark', 'Mark student work', 'Photo marking with the free AI'], ['stack', 'plans', 'Lesson plans', 'Create and print plans'], ['stack', 'reports', 'Reports and export', 'Formatted PDFs and backups'], ['stack', 'settings', 'Settings', 'Teachers, groups, levels and subjects']];
   return `<div class="between"><h1>More</h1></div>
   <div class="card">${items.map(([a, v, t, d]) => `<div class="li" data-a="${a}" data-v="${v}"><div class="ico">${ico(v === 'calendar' ? 'cal' : v === 'mark' ? 'camera' : v === 'plans' ? 'book' : v === 'reports' ? 'doc' : 'gear', 20)}</div><div class="grow"><b>${t}</b><div class="sub">${d}</div></div>${ico('chev', 18)}</div>`).join('')}</div>`;
 }
@@ -2222,7 +2255,7 @@ function pdfCalendar() {
   return d;
 }
 function pdfMarks() {
-  const d = new PdfDoc({ title: 'Marking report', sub: 'Work marked with Claude, with verdicts and right answers', brand: PDF_BRAND() });
+  const d = new PdfDoc({ title: 'Marking report', sub: 'Work marked by the free AI, with verdicts and right answers', brand: PDF_BRAND() });
   const ok = DB.marks.filter(m => m.verdict === 'Correct').length;
   d.meta([['Marked', String(DB.marks.length)], ['Correct', String(ok)], ['Needs practice', String(DB.marks.length - ok)], ['Date', new Date().toLocaleDateString()]]);
   d.section('Results');
@@ -2478,7 +2511,7 @@ const ACT = {
       const cells = await readTimetable(src);
       if (!cells.length) return toast('No lessons could be read. Try a clearer photo.');
       S.review = cells; S.stack.push('ttReview'); S.draft = null; render();
-    } catch (e) { toast(e.code === 'unavailable' ? 'Claude is not available on this page right now.' : e.code === 'parse' ? 'Claude could not read the timetable. Try a clearer photo.' : 'Could not read the timetable. Try again.'); }
+    } catch (e) { toast(e.code === 'unavailable' ? 'Marking is not available. Set a free AI key on this screen.' : e.code === 'parse' ? 'Claude could not read the timetable. Try a clearer photo.' : 'Could not read the timetable. Try again.'); }
   },
   revApply: () => {
     const rows = (S.review || []).filter(r => r.on);
@@ -2526,10 +2559,10 @@ const ACT = {
       burst();
     } catch (e) {
       S.markBusy = false; render();
-      const msg = e.code === 'unavailable' ? 'Claude is not available on this page right now.'
-        : e.code === 'images_unavailable' ? 'Photos cannot be sent here. Open GEMS in the Claude app.'
-        : e.code === 'parse' ? 'Claude could not read the result. Try a clearer, straight-on photo.'
-        : e.code === 'not_granted' ? 'Allow Claude when asked, then tap Mark again.'
+      const msg = e.code === 'unavailable' ? 'Marking is not available. Set a free AI key on this screen.'
+        : e.code === 'images_unavailable' ? 'Photos cannot be sent here. Try again later.'
+        : e.code === 'parse' ? 'The AI could not read the result. Try a clearer, straight-on photo.'
+        : e.code === 'not_granted' ? 'Allow access when asked, then tap Mark again.'
         : e.code === 'rate_limited' ? 'Too many requests. Wait a moment, then try again.'
         : 'Marking failed (' + (e.code || 'error') + '). Tap Mark again.';
       const st = $('#markStatus'); if (st) st.innerHTML = `<div class="empty" style="margin-top:12px">${esc(msg)}</div>`;
@@ -2933,7 +2966,7 @@ function vImport() {
 const TOP_TITLE3 = { reading: 'Reading files', readingNew: 'New reading file', readingOne: 'Reading file', readingEdit: 'Edit reading file', import: 'Import students' };
 Object.assign(TOP_TITLE, TOP_TITLE3);
 function vMore() {
-  const items = [['stack', 'calendar', 'Academic calendar', 'Holidays, breaks, exams and your events'], ['stack', 'mark', 'Mark student work', 'Photo marking with Claude'], ['stack', 'plans', 'Lesson plans', 'Create and print plans'], ['stack', 'reading', 'Reading files', 'English and Dhivehi passages by level'], ['stack', 'import', 'Import students', 'Upload a CSV or text list'], ['stack', 'docs', 'Key documents', 'Official policies and reports'], ['stack', 'reports', 'Reports and export', 'Formatted PDFs and backups'], ['stack', 'settings', 'Settings', 'Teachers, groups, levels and subjects']];
+  const items = [['stack', 'calendar', 'Academic calendar', 'Holidays, breaks, exams and your events'], ['stack', 'mark', 'Mark student work', 'Photo marking with the free AI'], ['stack', 'plans', 'Lesson plans', 'Create and print plans'], ['stack', 'reading', 'Reading files', 'English and Dhivehi passages by level'], ['stack', 'import', 'Import students', 'Upload a CSV or text list'], ['stack', 'docs', 'Key documents', 'Official policies and reports'], ['stack', 'reports', 'Reports and export', 'Formatted PDFs and backups'], ['stack', 'settings', 'Settings', 'Teachers, groups, levels and subjects']];
   return `<div class="between"><h1>More</h1></div>
   <div class="card">${items.map(([a, v, t, d]) => `<div class="li" data-a="${a}" data-v="${v}"><div class="ico">${ico(v === 'calendar' ? 'cal' : v === 'mark' ? 'camera' : v === 'plans' ? 'book' : v === 'reports' ? 'doc' : v === 'reading' ? 'book' : v === 'import' ? 'up' : 'gear', 20)}</div><div class="grow"><b>${t}</b><div class="sub">${d}</div></div>${ico('chev', 18)}</div>`).join('')}</div>`;
 }
@@ -3343,7 +3376,7 @@ Object.assign(ACT, {
   beeToggle: () => { DB.beeOn = DB.beeOn === false; save(); render(); }
 });
 function vMore() {
-  const items = [['stack', 'calendar', 'Academic calendar', 'Holidays, breaks, exams and your events'], ['stack', 'mark', 'Mark student work', 'Photo marking with Claude'],
+  const items = [['stack', 'calendar', 'Academic calendar', 'Holidays, breaks, exams and your events'], ['stack', 'mark', 'Mark student work', 'Photo marking with the free AI'],
     ['stack', 'plans', 'Lesson plans', 'Create and print plans'], ['stack', 'profileReport', 'Profile report', 'Choose grade, programme and learning profile'],
     ['stack', 'reading', 'Reading files', 'English and Dhivehi passages by level'], ['stack', 'import', 'Import students', 'Upload a list, Excel or CSV'],
     ['stack', 'docs', 'Key documents', 'Official policies and reports'], ['stack', 'reports', 'Reports and export', 'Formatted PDFs and backups'], ['stack', 'settings', 'Settings', 'Teachers, groups, levels and subjects']];
@@ -3510,7 +3543,7 @@ function applyTheme() {
 }
 function beeOn() { return false; }
 function vMore() {
-  const items = [['stack', 'calendar', 'Academic calendar', 'Holidays, breaks, exams and your events'], ['stack', 'mark', 'Mark student work', 'Photo marking with Claude'],
+  const items = [['stack', 'calendar', 'Academic calendar', 'Holidays, breaks, exams and your events'], ['stack', 'mark', 'Mark student work', 'Photo marking with the free AI'],
     ['stack', 'plans', 'Lesson plans', 'Create and print plans'], ['stack', 'profileReport', 'Profile report', 'Choose grade, programme or learning profile'],
     ['stack', 'reading', 'Reading files', 'English and Dhivehi passages by level'], ['stack', 'import', 'Import students', 'Upload a list, Excel or CSV'],
     ['stack', 'docs', 'Key documents', 'Official policies and reports'], ['stack', 'reports', 'Reports and export', 'Formatted PDFs and backups'], ['stack', 'settings', 'Settings', 'Teachers, groups, levels and subjects']];
@@ -6740,16 +6773,17 @@ async function askClaude(prompt, files, tier, signal) {
   const r = await s(prompt, opts);
   return r.text || '';
 }
-ACT.setAIKey = () => {
-  const k = prompt('Paste your free Gemini API key (from aistudio.google.com)', DB.aiKey || '');
-  if (k === null) return;
-  DB.aiKey = k.trim(); save(); toast(DB.aiKey ? 'AI key saved on this device' : 'AI key removed'); render();
+ACT.saveAIKey = () => {
+  const v = ((document.getElementById('ai_key') || {}).value || '').trim();
+  if (!v) return toast('Paste the key first');
+  DB.aiKey = v; save(); toast('Key saved on this device'); render();
 };
+ACT.clearAIKey = () => { DB.aiKey = ''; save(); toast('Key removed'); render(); };
 (function () {
   const prevMark = vMark;
   vMark = function () {
-    const status = DB.aiKey ? 'A free AI key is saved on this device.' : 'Set a free AI key to mark work on this website.';
-    return prevMark() + `<div class="card" style="margin-top:12px"><div class="f" style="margin-top:0">Free AI for marking</div><div class="sub" style="margin:4px 0 10px">${status}</div><div class="row"><button class="btn ghost sm" data-a="setAIKey">${DB.aiKey ? 'Change key' : 'Set free AI key'}</button></div></div>`;
+    const status = DB.aiKey ? 'A key is saved on this device. You can replace it below.' : 'Paste a free Gemini key below to mark work on this website.';
+    return prevMark() + `<div class="card" style="margin-top:12px"><div class="f" style="margin-top:0">Free AI key</div><div class="sub" style="margin:4px 0 10px">${status}</div><input id="ai_key" type="password" placeholder="Paste your Gemini API key" autocomplete="off" style="margin-bottom:8px"><div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn sm" data-a="saveAIKey">Save key</button>${DB.aiKey ? '<button class="btn ghost sm" data-a="clearAIKey">Remove key</button>' : ''}</div></div>`;
   };
 })();
 
