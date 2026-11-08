@@ -1070,6 +1070,27 @@ body #splash{background:#FFFFFF!important;background-image:none!important;displa
 .att-marks button.on.L{background:#C98A12;color:#fff;border-color:#C98A12}
 .att-marks button.on.A{background:#A52E2E;color:#fff;border-color:#A52E2E}
 .att-marks button.on.M{background:#2D5BA8;color:#fff;border-color:#2D5BA8}
+/* ==================== Lesson plans: multi-indicator tick list; objective shows each indicator on its own line ==================== */
+.pl-ind-list{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto;border:1px solid var(--line);border-radius:14px;padding:6px 10px;margin:6px 0 12px;background:#FBFCFE}
+.pl-ind-row{display:grid;grid-template-columns:22px 1fr;gap:10px;align-items:start;padding:8px 2px;border-bottom:1px solid var(--line);font-size:14px;line-height:1.45;cursor:pointer}
+.pl-ind-row:last-child{border-bottom:0}
+.pl-ind-row input[type="checkbox"]{margin-top:3px}
+.card div[style*="line-height:1.5"]{white-space:pre-line}
+/* ==================== Lesson plans: multi-select indicators; register: per-student indicator ratings ==================== */
+.pn-list{display:flex;flex-direction:column;gap:8px;margin:8px 0 12px}
+.pn-ind{display:flex;align-items:flex-start;gap:10px;text-align:start;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:#fff;color:var(--ink);font-size:14px;line-height:1.4}
+.pn-ind.on{border-color:var(--navy);background:#EEF3FB}
+.pn-tick{flex:0 0 20px;height:20px;border-radius:6px;border:2px solid #CBD2E0;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff}
+.pn-ind.on .pn-tick{background:var(--navy);border-color:var(--navy)}
+.ach-stu{border-bottom:1px solid var(--line);padding:4px 0}
+.ach-stu:last-child{border-bottom:0}
+.ach-head{width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 0;background:none;border:0;text-align:start;font-size:15px;color:var(--ink)}
+.ach-body{padding:0 0 10px}
+.ach-ind{padding:8px 0;border-top:1px dashed var(--line)}
+.ach-txt{font-size:13px;line-height:1.45;color:var(--ink);margin-bottom:6px}
+.ach-seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.ach-seg button{padding:8px 0;border-radius:10px;border:1px solid var(--line);background:#F7F9FD;color:var(--muted);font-weight:700;font-size:13px}
+.ach-seg button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
 </style>
 </head>
 
@@ -6874,6 +6895,97 @@ function vAttendTeacher() {
   <div class="card att-list">${list.length ? list.map(s => `<div class="att-row"><div class="av" style="background:${levelColor(s.level)}">${esc(initials(s.name))}</div><div class="att-name"><b>${esc(s.name)}</b><div class="sub">${esc(s.acad || s.level || '')}</div></div><div class="att-marks">${[['P', 'P'], ['L', 'L'], ['A', 'A'], ['M', 'M']].map(([v, l]) => `<button class="${rec[s.id] === v ? 'on ' + v : ''}" data-a="mark" data-id="${s.id}" data-v="${v}">${l}</button>`).join('')}</div></div>`).join('') : '<div class="empty">No students under this teacher yet. Share students in Auto-group.</div>'}</div>
   <div class="row" style="margin-top:14px"><button class="btn full" data-a="attSave">Save attendance</button></div>`;
 }
+
+/* ==================== Lesson plans: choose several indicators. Register: tap a student to rate each chosen indicator (FA, MA, A). ==================== */
+function planIndicatorItems(p) {
+  return (p.inds || []).map(id => { const x = indById(id); return x ? { id, text: x.text } : null; }).filter(Boolean);
+}
+function vPlanNew() {
+  const d = S.draft && S.draft.plan ? S.draft.plan : (S.draft = { plan: Object.assign({ cls: S.cls, subj: 'English', inds: [], min: 45, date: today(), tid: DB.teachers[0] ? DB.teachers[0].id : '' }, PLAN_DEFAULTS) }).plan;
+  if (!d.inds) d.inds = [];
+  if (!d.tid && DB.teachers[0]) d.tid = DB.teachers[0].id;
+  Object.keys(PLAN_DEFAULTS).forEach(k => { if (d[k] === undefined) d[k] = PLAN_DEFAULTS[k]; });
+  const teachers = DB.teachers.length
+    ? `<div class="chips" style="margin-top:6px">${DB.teachers.map(t => `<button class="chip ${t.id === d.tid ? 'on' : ''}" data-a="pnTid" data-v="${t.id}">${esc(t.name)}</button>`).join('')}</div>`
+    : '<div class="sub">Add teachers first.</div>';
+  const group = d.tid ? teacherStudents(d.tid).length : 0;
+  const items = [...IND, ...DB.custom].filter(x => x.subj === d.subj);
+  const list = items.map(x => { const on = d.inds.includes(x.id); return `<button class="pn-ind ${on ? 'on' : ''}" data-a="pnInd" data-v="${x.id}"><span class="pn-tick">${on ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`; }).join('') || `<div class="sub">No ${esc(d.subj)} indicators yet.</div>`;
+  return `<div class="between"><h1>New lesson plan</h1></div>
+  <div class="card">
+    <div class="f" style="margin-top:0">Teacher group</div>${teachers}
+    <div class="sub" style="margin-top:6px">${group} student${group === 1 ? '' : 's'} in this group.</div>
+    <div class="f" style="margin-top:14px">Subject</div><div class="chips" style="margin-top:6px">${DB.subjects.map(s => `<button class="chip ${s === d.subj ? 'on' : ''}" data-a="pnSubj" data-v="${esc(s)}">${esc(s)}</button>`).join('')}</div>
+    <div class="f" style="margin-top:14px">Indicators <span class="sub">(${d.inds.length} chosen)</span></div>
+    <div class="pn-list">${list}</div>
+    <label class="f">Topic<input id="f_topic" value="${esc(d.topic)}" placeholder="e.g. Living things"></label>
+    <div class="row" style="gap:8px"><label class="f" style="flex:1">Quarter<input id="f_quarter" value="${esc(d.quarter)}"></label><label class="f" style="flex:1">Week<input id="f_week" value="${esc(d.week)}"></label></div>
+    <label class="f">Date from (saved with the plan)<input id="f_pd" type="date" value="${d.date}"></label>
+    <div class="f" style="margin-top:14px">Duration</div><div class="seg" style="margin-top:6px">${[30, 45, 60].map(m => `<button class="${m === d.min ? 'on' : ''}" data-a="pnMin" data-v="${m}">${m} min</button>`).join('')}</div>
+    <label class="f">Assessment tools<input id="f_assess" value="${esc(d.assess)}"></label>
+    <label class="f">Teaching resources<input id="f_res" value="${esc(d.res)}"></label>
+    <div style="margin-top:16px"><button class="btn full" data-a="pnCreate">Save lesson plan</button></div>
+  </div>`;
+}
+ACT.pnInd = d => {
+  keepForm();
+  const p = S.draft.plan; p.inds = p.inds || [];
+  const i = p.inds.indexOf(d.v);
+  if (i >= 0) p.inds.splice(i, 1); else p.inds.push(d.v);
+  render();
+};
+ACT.pnCreate = () => {
+  keepForm();
+  const p = S.draft && S.draft.plan;
+  if (!p || !(p.inds || []).length) return toast('Choose at least one indicator.');
+  const cls = p.cls || (DB.classes[0] && DB.classes[0].id);
+  const group = p.tid ? teacherStudents(p.tid) : studentsIn(cls);
+  if (!group.length) return toast(p.tid ? 'This teacher has no students yet.' : 'This group has no students yet.');
+  const pl = buildPlan(cls, p.subj, p.inds[0], p.min, p.date);
+  pl.inds = p.inds.slice();
+  pl.objective = planIndicatorItems(pl).map(x => x.text).join('\n');
+  pl.ach = {};
+  pl.topic = p.topic || ''; pl.week = p.week || ''; pl.quarter = p.quarter || ''; pl.assess = p.assess || PLAN_DEFAULTS.assess; pl.res = p.res || PLAN_DEFAULTS.res;
+  pl.dateTo = planDateTo(p.date);
+  if (p.tid) { pl.tid = p.tid; pl.title = (p.topic || pl.title || 'Lesson plan') + ' · ' + (teacherName(p.tid) || 'Teacher'); }
+  DB.plans.push(pl); save(); S.draft = null; S.stack.pop(); S.stack.push('plan:' + pl.id);
+  burst(); toast('Lesson plan saved'); render();
+};
+(function () {
+  const prevPlan = vPlan;
+  vPlan = function (id) {
+    let html = prevPlan(id);
+    const p = DB.plans.find(x => x.id === id);
+    if (p && p.inds && p.inds.length) {
+      const list = planIndicatorItems(p).map(x => `<div class="ach-txt" style="margin:6px 0">• ${esc(x.text)}</div>`).join('');
+      html = html.split(esc(p.objective)).join(list);
+    }
+    return html;
+  };
+})();
+function vPlanAchievement(p) {
+  const list = p.tid ? teacherStudents(p.tid) : studentsIn(p.cls);
+  const inds = planIndicatorItems(p);
+  const ach = p.ach || {};
+  S.achOpen = S.achOpen || {};
+  const rated = list.filter(s => ach[s.id] && Object.keys(ach[s.id]).length).length;
+  const rows = list.map(s => {
+    const sa = ach[s.id] || {};
+    const open = !!S.achOpen[s.id];
+    const body = inds.map(x => `<div class="ach-ind"><div class="ach-txt">${esc(x.text)}</div><div class="ach-seg">${ACH_LEVELS.map(([v, t]) => `<button class="${sa[x.id] === v ? 'on' : ''}" title="${t}" data-a="achSet" data-id="${p.id}" data-s="${s.id}" data-i="${x.id}" data-v="${v}">${v}</button>`).join('')}</div></div>`).join('') || '<div class="sub">No indicators chosen.</div>';
+    return `<div class="ach-stu"><button class="ach-head" data-a="achToggle" data-s="${s.id}"><b>${esc(s.name)}</b><span class="sub">${Object.keys(sa).length} of ${inds.length} rated ${open ? '▴' : '▾'}</span></button>${open ? `<div class="ach-body">${body}</div>` : ''}</div>`;
+  }).join('');
+  return `<div class="sec"><h3>Achievement · ${rated} of ${list.length} students rated</h3></div>
+  <div class="card">${list.length ? rows : '<div class="sub">No students in this group.</div>'}</div>`;
+}
+ACT.achToggle = d => { S.achOpen = S.achOpen || {}; S.achOpen[d.s] = !S.achOpen[d.s]; render(); };
+ACT.achSet = d => {
+  const p = DB.plans.find(x => x.id === d.id); if (!p) return;
+  p.ach = p.ach || {}; p.ach[d.s] = p.ach[d.s] || {};
+  const cur = p.ach[d.s];
+  if (cur[d.i] === d.v) delete cur[d.i]; else cur[d.i] = d.v;
+  save(); render();
+};
 
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
