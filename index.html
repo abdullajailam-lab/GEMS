@@ -1145,6 +1145,11 @@ input,select,textarea{font-size:16px!important}
 .pn-sub.on .pn-tick{background:var(--navy);border-color:var(--navy);color:#fff}
 .pn-sub.goal{align-items:center}
 .pn-tag{margin-left:auto;font-style:normal;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#7A5B0A;background:#FBF3DC;padding:2px 7px;border-radius:999px;flex:0 0 auto}
+/* ==================== Lesson plans: frozen students and remove button ==================== */
+.pn-stu-card.frozen{background:#F6F7FA;border-style:dashed;opacity:.85}
+.pn-stu-h.frozen{color:var(--muted);cursor:default}
+.pn-cnt.frz{background:#FDECEC;color:#A52E2E}
+.pn-foot{padding:4px 12px 12px;border-top:1px solid var(--line);display:flex;justify-content:flex-end}
 </style>
 </head>
 
@@ -6545,6 +6550,9 @@ function pdfPlan(p) {
   d.table([{ h: 'Activity', w: 80 }, { h: 'Time', w: 20, align: 'center' }], ph.concl.map(b => [b.title, b.minutes + ' mins']));
   d.section('Assessment tools · Teaching resources');
   d.box('Assessment tools: ' + (p.assess || '—') + '\nTeaching resources: ' + (p.res || '—'), {});
+  const names = (p.sids || []).map(id => DB.students.find(x => x.id === id)).filter(Boolean);
+  d.section('Students in this lesson (' + names.length + ')');
+  d.table([{ h: 'No.', w: 12, align: 'center' }, { h: 'Student name', w: 88 }], names.map((x, i) => [String(i + 1), { t: x.name, b: true }]));
   d.sign(['Teacher', 'Leading teacher']);
   return d;
 }
@@ -7145,7 +7153,7 @@ ACT.pnCreate = () => {
   const p = S.draft && S.draft.plan;
   if (!p || !(p.inds || []).length) return toast('Choose at least one indicator.');
   const cls = p.cls || (DB.classes[0] && DB.classes[0].id);
-  const sids = (p.sids || []).filter(id => DB.students.some(s => s.id === id));
+  const sids = (p.sids || []).filter(id => DB.students.some(s => s.id === id) && planAvailability(id, p.date).ok);
   if (!sids.length) return toast('Choose at least one student.');
   const pl = buildPlan(cls, p.subj, p.inds[0], p.min, p.date);
   pl.inds = p.inds.slice();
@@ -7185,7 +7193,7 @@ vPlanNew = function () {
   if (!d.tid && DB.teachers[0]) d.tid = DB.teachers[0].id;
   Object.keys(PLAN_DEFAULTS).forEach(k => { if (d[k] === undefined) d[k] = PLAN_DEFAULTS[k]; });
   const group = d.tid ? teacherStudents(d.tid) : studentsIn(d.cls);
-  if (!Array.isArray(d.sids)) d.sids = group.map(s => s.id);
+  if (!Array.isArray(d.sids)) d.sids = group.filter(s => planAvailability(s.id, d.date).ok).map(s => s.id);
   const picked = d.sids.filter(id => group.some(s => s.id === id)).length;
   const teachers = DB.teachers.length
     ? `<div class="pn-row">${DB.teachers.map(t => `<button class="chip ${t.id === d.tid ? 'on' : ''}" data-a="pnTid" data-v="${t.id}">${esc(t.name)}</button>`).join('')}</div>`
@@ -7195,6 +7203,8 @@ vPlanNew = function () {
   const indGrid = indItems.map(x => { const on = d.inds.includes(x.id); return `<button class="pn-chip ${on ? 'on' : ''}" data-a="pnInd" data-v="${x.id}"><span class="pn-tick">${on ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`; }).join('') || `<div class="sub">No ${esc(d.subj)} indicators yet.</div>`;
   const indPicker = S.pnIndOpen ? `<div class="pn-grid">${indGrid}</div>` : '';
   const studentRows = group.map(s => {
+    const av = planAvailability(s.id, d.date);
+    if (!av.ok) return `<div class="pn-stu-card frozen"><div class="pn-stu-h frozen"><span class="pn-av">${esc(initials(s.name))}</span><span class="pn-nm">${esc(s.name)}</span><span class="pn-cnt frz">Frozen · ${av.why}</span></div></div>`;
     const on = d.sids.includes(s.id);
     if (!on) return `<div class="pn-stu-card"><button class="pn-stu-h off" data-a="pnSid" data-v="${s.id}"><span class="pn-av">${esc(initials(s.name))}</span><span class="pn-nm">${esc(s.name)}</span><span class="pn-cnt">Not in plan</span></button></div>`;
     const off = d.stuOff[s.id] || [];
@@ -7202,7 +7212,7 @@ vPlanNew = function () {
     const goalItems = (s.goals || []).map(id => { const x = indById(id); return x ? `<div class="pn-sub on goal"><span class="pn-tick">✓</span><span>${esc(x.text)}</span><em class="pn-tag">Goal</em></div>` : ''; }).join('');
     const count = d.inds.filter(id => !off.includes(id)).length + (s.goals || []).length;
     const body = planItems + goalItems;
-    return `<div class="pn-stu-card"><button class="pn-stu-h on" data-a="pnSid" data-v="${s.id}"><span class="pn-av">${esc(initials(s.name))}</span><span class="pn-nm">${esc(s.name)}</span><span class="pn-cnt">${count} indicator${count === 1 ? '' : 's'}</span></button>${body ? `<div class="pn-subs">${body}</div>` : '<div class="pn-empty">No indicators yet. Choose indicators above.</div>'}</div>`;
+    return `<div class="pn-stu-card"><button class="pn-stu-h on" data-a="pnSid" data-v="${s.id}"><span class="pn-av">${esc(initials(s.name))}</span><span class="pn-nm">${esc(s.name)}</span><span class="pn-cnt">${count} indicator${count === 1 ? '' : 's'}</span></button>${body ? `<div class="pn-subs">${body}</div>` : '<div class="pn-empty">No indicators yet. Choose indicators above.</div>'}<div class="pn-foot"><button class="btn ghost sm" data-a="pnSid" data-v="${s.id}">Remove from plan</button></div></div>`;
   }).join('') || '<div class="sub">No students in this group.</div>';
   return `<div class="between"><h1>New lesson plan</h1></div>
   <div class="card pn-form">
@@ -7287,6 +7297,31 @@ ACT.allStPdf = () => {
     all.map((s, i) => [String(i + 1), { t: s.name, b: true }, clsName(s.cls) || '', teacherName(s.tch) || ''])
   );
   exportFile('All students', d.build());
+};
+
+/* ==================== Lesson plans: attendance decides who can be planned that day. Present (P or Late L) is available; Absent or Mainstream is frozen. ==================== */
+function attMarkOn(sid, date) {
+  let mark = null;
+  Object.keys(DB.att || {}).forEach(k => {
+    if (mark || !k.startsWith(date + '|')) return;
+    const m = (DB.att[k] || {})[sid];
+    if (m) mark = m;
+  });
+  return mark;
+}
+function planAvailability(sid, date) {
+  const m = attMarkOn(sid, date);
+  if (m === 'P' || m === 'L') return { ok: true, why: '' };
+  if (m === 'A') return { ok: false, why: 'Absent' };
+  if (m === 'M') return { ok: false, why: 'Mainstream' };
+  return { ok: false, why: 'Not marked' };
+}
+ACT.pnSidAll = () => {
+  keepForm();
+  const p = S.draft.plan;
+  const group = p.tid ? teacherStudents(p.tid) : studentsIn(p.cls);
+  p.sids = group.filter(s => planAvailability(s.id, p.date).ok).map(s => s.id);
+  render();
 };
 
 /* ==================== Header, bottom bar, render, start ==================== */
