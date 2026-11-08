@@ -1154,6 +1154,11 @@ input,select,textarea{font-size:16px!important}
 button.pn-sub{width:100%;font:inherit}
 .pn-sub.goal:not(.on){border-style:dashed;background:#fff;color:var(--muted)}
 .pn-sub.goal:not(.on) .pn-tick{background:#fff;border-color:#CBD2E0;color:transparent}
+/* ==================== Lesson plan: quarter and week from the calendar ==================== */
+.tw-box{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:14px;padding:12px;background:#F7F9FD;margin:6px 0}
+.tw-box>div{flex:1;min-width:110px}
+.tw-k{display:block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tw-box b{font-size:15px}
 </style>
 </head>
 
@@ -7221,6 +7226,11 @@ vPlanNew = function () {
     const body = planItems + goalItems;
     return `<div class="pn-stu-card"><button class="pn-stu-h on" data-a="pnSid" data-v="${s.id}"><span class="pn-av">${esc(initials(s.name))}</span><span class="pn-nm">${esc(s.name)}</span><span class="pn-cnt">${count} indicator${count === 1 ? '' : 's'}</span></button>${body ? `<div class="pn-subs">${body}</div>` : '<div class="pn-empty">No indicators yet. Choose indicators above.</div>'}<div class="pn-foot"><button class="btn ghost sm" data-a="pnSid" data-v="${s.id}">Remove from plan</button></div></div>`;
   }).join('') || '<div class="sub">No students in this group.</div>';
+  const tw = dayInfo(d.date || today());
+  if (!S.twEdit) { d.quarter = tw.term ? 'Term ' + tw.term.n : ''; d.week = tw.term ? 'Week ' + tw.week : ''; }
+  const twBlock = S.twEdit
+    ? `<div class="pn-two"><label class="f">Quarter<input id="f_quarter" value="${esc(d.quarter)}"></label><label class="f">Week<input id="f_week" value="${esc(d.week)}"></label></div><button class="lnk" data-a="twAuto" style="margin-top:6px">Use calendar again</button>`
+    : `<div class="tw-box"><div><span class="tw-k">Quarter</span><b>${esc(d.quarter || 'Between terms')}</b></div><div><span class="tw-k">Week</span><b>${esc(d.week || '—')}</b></div><button class="btn ghost sm" data-a="twEdit">Edit</button></div><div class="sub" style="margin-top:6px">From the academic calendar for ${esc(fmtD(d.date))}.</div>`;
   return `<div class="between"><h1>New lesson plan</h1></div>
   <div class="card pn-form">
     <div class="pn-sec"><div class="f">Teacher group</div>${teachers}<div class="sub" style="margin-top:6px">${group.length} student${group.length === 1 ? '' : 's'} in this group.</div></div>
@@ -7235,7 +7245,7 @@ vPlanNew = function () {
     </div>
     <div class="pn-sec">
       <label class="f">Topic<input id="f_topic" value="${esc(d.topic)}" placeholder="e.g. Living things"></label>
-      <div class="pn-two"><label class="f">Quarter<input id="f_quarter" value="${esc(d.quarter)}"></label><label class="f">Week<input id="f_week" value="${esc(d.week)}"></label></div>
+      ${twBlock}
       <label class="f">Date from (saved with the plan)<input id="f_pd" type="date" value="${d.date}"></label>
       <div class="f" style="margin-top:12px">Duration</div>
       <div class="seg" style="margin-top:6px">${[30, 45, 60].map(m => `<button class="${m === d.min ? 'on' : ''}" data-a="pnMin" data-v="${m}">${m} min</button>`).join('')}</div>
@@ -7340,6 +7350,9 @@ ACT.pnGoal = d => {
   p.goalOff[d.s] = l;
   render();
 };
+
+ACT.twEdit = () => { keepForm(); S.twEdit = true; render(); };
+ACT.twAuto = () => { keepForm(); S.twEdit = false; render(); };
 
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
