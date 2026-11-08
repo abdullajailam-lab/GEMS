@@ -1129,6 +1129,22 @@ input,select,textarea{font-size:16px!important}
 .lock-card{text-align:center;padding:22px 18px}
 .lock-ico{width:56px;height:56px;margin:0 auto;border-radius:18px;background:#EEF3FB;color:var(--navy);display:grid;place-items:center}
 .pin-in{margin-top:16px;text-align:center;letter-spacing:.5em;font-size:22px!important;font-weight:700}
+/* ==================== New lesson plan: students and their indicators, organised ==================== */
+.pn-stu-list{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.pn-stu-card{border:1px solid var(--line);border-radius:14px;background:#fff;overflow:hidden}
+.pn-stu-h{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;background:#fff;border:0;text-align:start;font-size:14px;color:var(--ink)}
+.pn-stu-h.on{background:#F4F7FD}
+.pn-stu-h.off{color:var(--muted)}
+.pn-av{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;flex:0 0 30px}
+.pn-stu-h.off .pn-av{background:#D8DEEA;color:#4A5570}
+.pn-nm{flex:1;min-width:0;font-weight:600;line-height:1.3}
+.pn-cnt{font-size:11.5px;font-weight:700;color:#2D5BA8;background:#EAF1FB;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.pn-stu-h.off .pn-cnt{background:#F1F3F7;color:var(--muted)}
+.pn-subs{display:flex;flex-direction:column;gap:6px;padding:10px 12px 12px;border-top:1px solid var(--line)}
+.pn-empty{padding:10px 12px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line)}
+.pn-sub.on .pn-tick{background:var(--navy);border-color:var(--navy);color:#fff}
+.pn-sub.goal{align-items:center}
+.pn-tag{margin-left:auto;font-style:normal;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#7A5B0A;background:#FBF3DC;padding:2px 7px;border-radius:999px;flex:0 0 auto}
 </style>
 </head>
 
@@ -7180,11 +7196,13 @@ vPlanNew = function () {
   const indPicker = S.pnIndOpen ? `<div class="pn-grid">${indGrid}</div>` : '';
   const studentRows = group.map(s => {
     const on = d.sids.includes(s.id);
-    if (!on) return `<div class="pn-stu"><button class="pn-stu-h" data-a="pnSid" data-v="${s.id}"><span class="pn-tick"></span><span>${esc(s.name)}</span></button></div>`;
+    if (!on) return `<div class="pn-stu-card"><button class="pn-stu-h off" data-a="pnSid" data-v="${s.id}"><span class="pn-av">${esc(initials(s.name))}</span><span class="pn-nm">${esc(s.name)}</span><span class="pn-cnt">Not in plan</span></button></div>`;
     const off = d.stuOff[s.id] || [];
-    const subs = d.inds.map(id => { const x = indById(id); if (!x) return ''; const t = !off.includes(id); return `<button class="pn-sub ${t ? 'on' : ''}" data-a="pnStuInd" data-s="${s.id}" data-i="${id}"><span class="pn-tick">${t ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`; }).join('') || '<div class="sub" style="padding:4px 0">Choose indicators first.</div>';
-    const goalsBlock = (s.goals || []).length ? '<div class="sub" style="padding:4px 0 0">From the student\'s learning goals</div>' + (s.goals || []).map(id => { const x = indById(id); return x ? `<div class="pn-sub on"><span class="pn-tick">✓</span><span>${esc(x.text)}</span></div>` : ''; }).join('') : '';
-    return `<div class="pn-stu"><button class="pn-stu-h on" data-a="pnSid" data-v="${s.id}"><span class="pn-tick">✓</span><span>${esc(s.name)}</span></button><div class="pn-subs">${subs}${goalsBlock}</div></div>`;
+    const planItems = d.inds.map(id => { const x = indById(id); if (!x) return ''; const t = !off.includes(id); return `<button class="pn-sub ${t ? 'on' : ''}" data-a="pnStuInd" data-s="${s.id}" data-i="${id}"><span class="pn-tick">${t ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`; }).join('');
+    const goalItems = (s.goals || []).map(id => { const x = indById(id); return x ? `<div class="pn-sub on goal"><span class="pn-tick">✓</span><span>${esc(x.text)}</span><em class="pn-tag">Goal</em></div>` : ''; }).join('');
+    const count = d.inds.filter(id => !off.includes(id)).length + (s.goals || []).length;
+    const body = planItems + goalItems;
+    return `<div class="pn-stu-card"><button class="pn-stu-h on" data-a="pnSid" data-v="${s.id}"><span class="pn-av">${esc(initials(s.name))}</span><span class="pn-nm">${esc(s.name)}</span><span class="pn-cnt">${count} indicator${count === 1 ? '' : 's'}</span></button>${body ? `<div class="pn-subs">${body}</div>` : '<div class="pn-empty">No indicators yet. Choose indicators above.</div>'}</div>`;
   }).join('') || '<div class="sub">No students in this group.</div>';
   return `<div class="between"><h1>New lesson plan</h1></div>
   <div class="card pn-form">
@@ -7195,7 +7213,7 @@ vPlanNew = function () {
       ${indPicker}
     </div>
     <div class="pn-sec"><div class="pn-head"><div class="f">Students and their indicators</div><span class="sub">${picked} of ${group.length}</span></div>
-      <div class="pn-list">${studentRows}</div>
+      <div class="pn-stu-list">${studentRows}</div>
       <div class="pn-row" style="margin-top:8px"><button class="btn ghost sm" data-a="pnSidAll">Select all</button><button class="btn ghost sm" data-a="pnSidNone">Clear</button></div>
     </div>
     <div class="pn-sec">
@@ -7248,18 +7266,28 @@ ACT.pinCheck = () => {
   }
 };
 
-/* ==================== All students list moves from the Students screen into Reports ==================== */
+/* ==================== Reports: All students is a report row. Tapping it exports the full list as a PDF. ==================== */
 (function () {
   const prevRoute = routeMain;
   routeMain = function () {
     const html = prevRoute();
     if (cur() !== 'reports') return html;
-    const all = [...DB.students].sort(byStudentName);
-    const card = `<div class="card all-st"><div class="between"><b>All students</b><span class="sub">${all.length} total</span></div>${all.length ? `<ol class="all-names">${all.map(s => `<li>${esc(s.name)}</li>`).join('')}</ol>` : '<div class="sub" style="padding:8px 0">No students yet.</div>'}</div>`;
+    const row = `<div class="card" style="margin-bottom:12px"><div class="li" data-a="allStPdf"><div class="ico">${ico('pdf', 22)}</div><div class="grow"><b>All students</b><div class="sub">Numbered list of every student, with their group and teacher, as a PDF</div></div></div></div>`;
     const idx = html.indexOf('<div class="card');
-    return idx >= 0 ? html.slice(0, idx) + card + html.slice(idx) : card + html;
+    return idx >= 0 ? html.slice(0, idx) + row + html.slice(idx) : row + html;
   };
 })();
+ACT.allStPdf = () => {
+  const all = [...DB.students].sort(byStudentName);
+  if (!all.length) return toast('No students yet.');
+  const d = new PdfDoc({ title: 'All students', sub: all.length + (all.length === 1 ? ' student' : ' students'), brand: PDF_BRAND() });
+  d.section('Student list');
+  d.table(
+    [{ h: 'No.', w: 10, align: 'center' }, { h: 'Name', w: 55 }, { h: 'Group', w: 20 }, { h: 'Teacher', w: 15 }],
+    all.map((s, i) => [String(i + 1), { t: s.name, b: true }, clsName(s.cls) || '', teacherName(s.tch) || ''])
+  );
+  exportFile('All students', d.build());
+};
 
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
