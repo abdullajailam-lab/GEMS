@@ -1091,6 +1091,14 @@ body #splash{background:#FFFFFF!important;background-image:none!important;displa
 .ach-seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .ach-seg button{padding:8px 0;border-radius:10px;border:1px solid var(--line);background:#F7F9FD;color:var(--muted);font-weight:700;font-size:13px}
 .ach-seg button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+/* ==================== Lesson plan: indicators under each student ==================== */
+.pn-stu{margin-bottom:8px}
+.pn-subs{display:flex;flex-direction:column;gap:6px;padding:6px 0 4px 14px}
+.pn-sub{display:flex;align-items:flex-start;gap:10px;text-align:start;padding:8px 10px;border-radius:10px;border:1px dashed var(--line);background:#fff;color:var(--muted);font-size:13px;line-height:1.4}
+.pn-sub.on{border-style:solid;border-color:#9FB6DA;color:var(--ink);background:#F5F8FD}
+.pn-sub .pn-tick{width:18px;height:18px;flex:0 0 18px;font-size:11px}
+/* ==================== Report book on screen: pages keep their normal size (the full-sheet fill is for printing) ==================== */
+#rbOverlay .rb-doc .pg{min-height:0;display:block}
 </style>
 </head>
 
@@ -5009,6 +5017,9 @@ const RB_PRINT_CSS = `
 .rb-doc{font-family:'Times New Roman',Times,serif;color:#000;font-size:12px;line-height:1.3}
 .rb-doc .pg{page-break-after:always;padding:0;margin:0 0 14px}
 .rb-doc .pg:last-child{page-break-after:auto}
+.rb-doc .pg{display:grid;grid-template-rows:auto auto minmax(0,1fr);min-height:9.4in;box-sizing:border-box}
+.rb-doc .pg > table.bx{height:100%}
+.rb-doc .pg > table.bx td,.rb-doc .pg > table.bx th{vertical-align:middle}
 .rb-doc table{border-collapse:collapse;width:100%}
 .rb-doc .hd{margin-bottom:8px}
 .rb-doc .hdt{text-align:center;vertical-align:middle;padding:0}
@@ -7034,6 +7045,85 @@ vPlanAchievement = function (p) {
     const sa = ach[s.id] || {};
     const open = !!S.achOpen[s.id];
     const body = inds.map(x => `<div class="ach-ind"><div class="ach-txt">${esc(x.text)}</div><div class="ach-seg">${ACH_LEVELS.map(([v, t]) => `<button class="${sa[x.id] === v ? 'on' : ''}" title="${t}" data-a="achSet" data-id="${p.id}" data-s="${s.id}" data-i="${x.id}" data-v="${v}">${v}</button>`).join('')}</div></div>`).join('') || '<div class="sub">No indicators chosen.</div>';
+    return `<div class="ach-stu"><button class="ach-head" data-a="achToggle" data-s="${s.id}"><b>${esc(s.name)}</b><span class="sub">${Object.keys(sa).length} of ${inds.length} rated ${open ? '▴' : '▾'}</span></button>${open ? `<div class="ach-body">${body}</div>` : ''}</div>`;
+  }).join('');
+  return `<div class="sec"><h3>Achievement · ${rated} of ${group.length} students rated</h3></div>
+  <div class="card">${group.length ? rows : '<div class="sub">No students in this plan.</div>'}</div>`;
+};
+
+/* ==================== Lesson plan: the chosen indicators appear under each student's name, with a tick for each. The register shows each student only their ticked indicators. ==================== */
+(function () {
+  const basePlanNew = vPlanNew;
+  vPlanNew = function () {
+    const html = basePlanNew();
+    const d = S.draft && S.draft.plan; if (!d) return html;
+    const group = d.tid ? teacherStudents(d.tid) : studentsIn(d.cls);
+    if (!Array.isArray(d.sids)) d.sids = group.map(s => s.id);
+    d.stuOff = d.stuOff || {};
+    const rows = group.map(s => {
+      const on = d.sids.includes(s.id);
+      if (!on) return `<div class="pn-stu"><button class="pn-ind" data-a="pnSid" data-v="${s.id}"><span class="pn-tick"></span><span>${esc(s.name)}</span></button></div>`;
+      const off = d.stuOff[s.id] || [];
+      const subs = (d.inds || []).map(id => {
+        const x = indById(id); if (!x) return '';
+        const ticked = !off.includes(id);
+        return `<button class="pn-sub ${ticked ? 'on' : ''}" data-a="pnStuInd" data-s="${s.id}" data-i="${id}"><span class="pn-tick">${ticked ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`;
+      }).join('') || '<div class="sub">Choose indicators above first.</div>';
+      return `<div class="pn-stu"><button class="pn-ind on" data-a="pnSid" data-v="${s.id}"><span class="pn-tick">✓</span><span>${esc(s.name)}</span></button><div class="pn-subs">${subs}</div></div>`;
+    }).join('') || '<div class="sub">No students in this group.</div>';
+    const block = `<div class="f" style="margin-top:14px">Students and their indicators <span class="sub">(${d.sids.filter(id => group.some(s => s.id === id)).length} of ${group.length} students)</span></div>
+      <div class="pn-list">${rows}</div>
+      <div class="row" style="gap:8px;margin-bottom:10px"><button class="btn ghost sm" data-a="pnSidAll">Select all students</button><button class="btn ghost sm" data-a="pnSidNone">Clear students</button></div>`;
+    const start = html.indexOf('<div class="f" style="margin-top:14px">Students in this plan');
+    const end = html.indexOf('<label class="f">Topic');
+    if (start < 0 || end < 0) return html;
+    return html.slice(0, start) + block + html.slice(end);
+  };
+})();
+ACT.pnStuInd = d => {
+  keepForm();
+  const p = S.draft.plan; p.stuOff = p.stuOff || {};
+  const list = p.stuOff[d.s] || [];
+  const i = list.indexOf(d.i);
+  if (i >= 0) list.splice(i, 1); else list.push(d.i);
+  p.stuOff[d.s] = list;
+  render();
+};
+function studentIndicators(p, sid) {
+  const off = (p.stuOff && p.stuOff[sid]) || [];
+  return planIndicatorItems(p).filter(x => !off.includes(x.id));
+}
+ACT.pnCreate = () => {
+  keepForm();
+  const p = S.draft && S.draft.plan;
+  if (!p || !(p.inds || []).length) return toast('Choose at least one indicator.');
+  const cls = p.cls || (DB.classes[0] && DB.classes[0].id);
+  const sids = (p.sids || []).filter(id => DB.students.some(s => s.id === id));
+  if (!sids.length) return toast('Choose at least one student.');
+  const pl = buildPlan(cls, p.subj, p.inds[0], p.min, p.date);
+  pl.inds = p.inds.slice();
+  pl.objective = planIndicatorItems(pl).map(x => x.text).join('\n');
+  pl.ach = {}; pl.sids = sids;
+  pl.stuOff = {};
+  sids.forEach(id => { if (p.stuOff && p.stuOff[id] && p.stuOff[id].length) pl.stuOff[id] = p.stuOff[id].slice(); });
+  pl.topic = p.topic || ''; pl.week = p.week || ''; pl.quarter = p.quarter || ''; pl.assess = p.assess || PLAN_DEFAULTS.assess; pl.res = p.res || PLAN_DEFAULTS.res;
+  pl.dateTo = planDateTo(p.date);
+  if (p.tid) { pl.tid = p.tid; pl.title = (p.topic || pl.title || 'Lesson plan') + ' · ' + (teacherName(p.tid) || 'Teacher'); }
+  DB.plans.push(pl); save(); S.draft = null; S.stack.pop(); S.stack.push('plan:' + pl.id);
+  burst(); toast('Lesson plan saved for ' + sids.length + ' students'); render();
+};
+vPlanAchievement = function (p) {
+  const group = p.sids && p.sids.length
+    ? p.sids.map(id => DB.students.find(s => s.id === id)).filter(Boolean)
+    : (p.tid ? teacherStudents(p.tid) : studentsIn(p.cls));
+  const ach = p.ach || {};
+  S.achOpen = S.achOpen || {};
+  const rated = group.filter(s => ach[s.id] && Object.keys(ach[s.id]).length).length;
+  const rows = group.map(s => {
+    const sa = ach[s.id] || {};
+    const inds = studentIndicators(p, s.id);
+    const open = !!S.achOpen[s.id];
+    const body = inds.map(x => `<div class="ach-ind"><div class="ach-txt">${esc(x.text)}</div><div class="ach-seg">${ACH_LEVELS.map(([v, t]) => `<button class="${sa[x.id] === v ? 'on' : ''}" title="${t}" data-a="achSet" data-id="${p.id}" data-s="${s.id}" data-i="${x.id}" data-v="${v}">${v}</button>`).join('')}</div></div>`).join('') || '<div class="sub">No indicators for this student.</div>';
     return `<div class="ach-stu"><button class="ach-head" data-a="achToggle" data-s="${s.id}"><b>${esc(s.name)}</b><span class="sub">${Object.keys(sa).length} of ${inds.length} rated ${open ? '▴' : '▾'}</span></button>${open ? `<div class="ach-body">${body}</div>` : ''}</div>`;
   }).join('');
   return `<div class="sec"><h3>Achievement · ${rated} of ${group.length} students rated</h3></div>
