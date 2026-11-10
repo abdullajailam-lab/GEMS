@@ -1531,7 +1531,7 @@ class PdfDoc {
   constructor(o = {}) {
     this.land = !!o.land; this.W = this.land ? 842 : 595; this.H = this.land ? 595 : 842; this.M = 40;
     this.title = o.title || ''; this.sub = o.sub || ''; this.brand = o.brand || {};
-    this.pages = []; this.newPage(true);
+    this.pages = []; this.images = []; this.photo = o.photo || null; this.newPage(true);
   }
   get bottom() { return this.H - 58; }
   Y(y) { return (this.H - y).toFixed(2); }
@@ -1541,7 +1541,7 @@ class PdfDoc {
     if (first) {
       this.wave(PDFC.blue, 92, 14, 0.72); this.wave(PDFC.navy, 82, 12, 0.78);
       this.waveLine(86, 12);
-      this.logo(M, 22, 44);
+      if (this.photo) { this.circle(M + 22, 44, 23, '#FFFFFF'); this.photoAt(this.photo, M + 6, 28, 32, 32); } else this.logo(M, 22, 44);
       this.text('GEMS', M + 56, 25, { size: 22, bold: true, color: '#FFFFFF', sp: 2 });
       this.text('CLASSROOM MANAGEMENT', M + 57, 52, { size: 7, bold: true, color: '#9FD8F0', sp: 1.6 });
       const b = this.brand;
@@ -1612,6 +1612,11 @@ class PdfDoc {
     this.poly([P(21, 21), P(43, 21), P(49, 29), P(32, 47), P(15, 29)], '#FFFFFF');
     this.poly([P(21, 21), P(32, 29), P(15, 29)], '#BFE3F7');
     this.poly([P(43, 21), P(49, 29), P(32, 29)], '#8FD8F8');
+  }
+  photoAt(p, x, y, w, h) {
+    if (this.images.indexOf(p) < 0) this.images.push(p);
+    const n = this.images.indexOf(p) + 1;
+    this.ops.push(`q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${(this.H - y - h).toFixed(2)} cm /Im${n} Do Q`);
   }
   text(s, x, y, o = {}) {
     const size = o.size || 10, bold = !!o.bold, col = o.color || PDFC.ink;
@@ -1792,12 +1797,15 @@ class PdfDoc {
     objs[4] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>';
     objs[5] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>';
     const kids = [];
+    const imgStart = 6 + 2 * N;
+    const xo = this.images.map((_, i) => '/Im' + (i + 1) + ' ' + (imgStart + i) + ' 0 R').join(' ');
     this.pages.forEach((ops, i) => {
       const pid = 6 + 2 * i, cid = 7 + 2 * i, body = ops.join('\n');
       kids.push(pid + ' 0 R');
-      objs[pid] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${this.W} ${this.H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents ${cid} 0 R >>`;
+      objs[pid] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${this.W} ${this.H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >>${xo ? ' /XObject << ' + xo + ' >>' : ''} >> /Contents ${cid} 0 R >>`;
       objs[cid] = `<< /Length ${body.length} >>\nstream\n${body}\nendstream`;
     });
+    this.images.forEach((p, i) => { objs[imgStart + i] = `<< /Type /XObject /Subtype /Image /Width ${p.w} /Height ${p.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.bin.length} >>\nstream\n${p.bin}\nendstream`; });
     objs[2] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${N} >>`;
     let out = '%PDF-1.4\n'; const offs = [];
     for (let i = 1; i < objs.length; i++) { offs[i] = out.length; out += `${i} 0 obj\n${objs[i]}\nendobj\n`; }
@@ -7545,16 +7553,43 @@ ACT.mDel = d => {
   if (sbActive()) sbReq('/rest/v1/gems_meetings?id=eq.' + encodeURIComponent(d.v), { method: 'DELETE' }).catch(() => { });
   S.stack.pop(); toast('Meeting deleted'); render();
 };
-/* Export PDF: a real PDF file that is saved to the device */
-ACT.mPdf = d => {
+/* Export PDF: a real PDF file with the school logo, saved to the device */
+let MEETING_PHOTO = null;
+function meetingLogo() {
+  if (MEETING_PHOTO) return Promise.resolve(MEETING_PHOTO);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const cv = document.createElement('canvas');
+        const k = Math.min(1, 400 / Math.max(img.naturalWidth, img.naturalHeight));
+        cv.width = Math.max(1, Math.round(img.naturalWidth * k)); cv.height = Math.max(1, Math.round(img.naturalHeight * k));
+        const cx = cv.getContext('2d'); cx.fillStyle = '#FFFFFF'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(img, 0, 0, cv.width, cv.height);
+        const b64 = cv.toDataURL('image/jpeg', 0.92).split(',')[1];
+        MEETING_PHOTO = { bin: atob(b64), w: cv.width, h: cv.height };
+        resolve(MEETING_PHOTO);
+      } catch (e) { reject(e); }
+    };
+    img.onerror = reject;
+    img.src = 'data:image/png;base64,' + RB_LOGO_B64;
+  });
+}
+function mShort(ds) {
+  try { return new Date(ds + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
+  catch (e) { return ds || '—'; }
+}
+ACT.mPdf = async d => {
   const m = mList().find(x => x.id === d.v); if (!m) return toast('Meeting not found.');
-  const doc = new PdfDoc({ title: 'Meeting minutes', sub: (m.title || 'Meeting') + ' · ' + fmtD(m.date), brand: PDF_BRAND() });
+  let photo = null; try { photo = await meetingLogo(); } catch (e) { photo = null; }
+  const doc = new PdfDoc({ title: 'Meeting minutes', sub: (m.title || 'Meeting') + ' · ' + fmtD(m.date), brand: PDF_BRAND(), photo });
   doc.section('Meeting details');
-  doc.meta([['Meeting', m.title || '—'], ['Date', fmtD(m.date)], ['Time', m.time || '—'], ['Venue', m.venue || '—'], ['Attendees', mAttNames(m).join(', ') || '—']]);
+  doc.meta([['Date', mShort(m.date)], ['Time', m.time || '—'], ['Venue', m.venue || '—']]);
+  doc.section('Attendees');
+  doc.box(mAttNames(m).join(', ') || '—', {});
   doc.section('Minutes');
   const pts = mPoints(m);
   doc.table([{ h: 'No.', w: 12, align: 'center' }, { h: 'Point', w: 88 }], pts.length ? pts.map((p, i) => [String(i + 1), p]) : [['—', 'No minutes recorded.']]);
-  doc.sign([MEETING_LEADER]);
+  doc.sign(['Leading teacher: ' + MEETING_LEADER]);
   exportFile('Minutes-' + (m.date || 'meeting'), doc.build());
 };
 /* Print with logo: the school logo and layout, saved with the print dialog */
