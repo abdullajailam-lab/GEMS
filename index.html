@@ -1165,6 +1165,10 @@ html,body{max-width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%;text-si
 /* ==================== Meetings and minutes ==================== */
 .mtext{white-space:pre-wrap;font-size:14px;line-height:1.55;color:var(--ink)}
 textarea{font-size:16px!important;width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-family:inherit;resize:vertical;background:#fff}
+/* ==================== Meeting form: date and time boxes line up ==================== */
+.pn-two{align-items:start}
+.pn-two>label{min-width:0}
+.pn-two input,label.f input{width:100%;min-width:0;max-width:100%;box-sizing:border-box;-webkit-appearance:none;appearance:none}
 </style>
 </head>
 
@@ -7424,7 +7428,7 @@ function mCurrent(id) {
 }
 function mKeep() {
   const d = S.mDraft; if (!d) return;
-  [['title', 'f_mt'], ['date', 'f_md'], ['time', 'f_mtime'], ['venue', 'f_mv'], ['chair', 'f_mc'], ['agenda', 'f_mag'], ['minutes', 'f_mmin'], ['decisions', 'f_mdec']].forEach(([k, el]) => {
+  [['title', 'f_mt'], ['date', 'f_md'], ['time', 'f_mtime'], ['venue', 'f_mv'], ['agenda', 'f_mag'], ['minutes', 'f_mmin'], ['decisions', 'f_mdec'], ['chair', 'f_mc2']].forEach(([k, el]) => {
     const e = document.getElementById(el); if (e) d[k] = e.value;
   });
 }
@@ -7443,7 +7447,9 @@ function vMeetingForm(id) {
     <label class="f">Meeting title<input id="f_mt" value="${esc(d.title)}" placeholder="e.g. Staff meeting"></label>
     <div class="pn-two"><label class="f">Date<input id="f_md" type="date" value="${esc(d.date)}"></label><label class="f">Time<input id="f_mtime" value="${esc(d.time)}" placeholder="e.g. 2:00 PM"></label></div>
     <label class="f">Venue<input id="f_mv" value="${esc(d.venue)}" placeholder="e.g. Staff room"></label>
-    <label class="f">Chaired by<input id="f_mc" value="${esc(d.chair)}"></label>
+    <div class="f" style="margin-top:12px">Chaired by</div>
+    <div class="pn-grid" style="margin-bottom:6px">${DB.teachers.map(t => `<button class="pn-chip ${d.chair === t.name && !d.chairOther ? 'on' : ''}" data-a="mChair" data-v="${t.id}"><span class="pn-tick">${d.chair === t.name && !d.chairOther ? '✓' : ''}</span><span>${esc(t.name)}</span></button>`).join('')}<button class="pn-chip ${d.chairOther ? 'on' : ''}" data-a="mChair" data-v="other"><span class="pn-tick">${d.chairOther ? '✓' : ''}</span><span>Other name</span></button></div>
+    ${d.chairOther ? `<label class="f">Name of chair<input id="f_mc2" value="${esc(d.chair)}" placeholder="Type the name"></label>` : ''}
     <div class="f" style="margin-top:12px">Attendees <span class="sub">(${d.att.length} chosen)</span></div>
     <div class="pn-grid" style="margin-bottom:12px">${names}</div>
     <label class="f">Agenda<textarea id="f_mag" rows="3" placeholder="One item per line">${esc(d.agenda)}</textarea></label>
@@ -7479,6 +7485,14 @@ ACT.mSave = () => {
   save(); S.mDraft = null;
   S.stack.pop(); S.stack.push('meeting:' + rec.id);
   toast('Meeting saved'); render();
+  ACT.mPdf({ v: rec.id });
+};
+ACT.mChair = d => {
+  mKeep();
+  const s = S.mDraft;
+  if (d.v === 'other') { s.chairOther = true; s.chair = ''; }
+  else { const t = DB.teachers.find(x => x.id === d.v); s.chairOther = false; s.chair = t ? t.name : ''; }
+  render();
 };
 ACT.mDel = d => {
   if (!window.confirm('Delete this meeting and its minutes?')) return;
@@ -7488,15 +7502,39 @@ ACT.mDel = d => {
 };
 ACT.mPdf = d => {
   const m = mList().find(x => x.id === d.v); if (!m) return toast('Meeting not found.');
-  const att = (m.att || []).map(t => teacherName(t)).filter(Boolean).join(', ');
-  const doc = new PdfDoc({ title: 'Meeting minutes', sub: (m.title || 'Meeting') + ' · ' + fmtD(m.date), brand: PDF_BRAND() });
-  doc.section('Meeting details');
-  doc.meta([['Title', m.title || '—'], ['Date', fmtD(m.date)], ['Time', m.time || '—'], ['Venue', m.venue || '—'], ['Chaired by', m.chair || '—'], ['Attendees', att || '—']]);
-  doc.section('Agenda'); doc.box(m.agenda || '—', {});
-  doc.section('Minutes'); doc.box(m.minutes || '—', {});
-  doc.section('Decisions and actions'); doc.box(m.decisions || '—', {});
-  doc.sign(['Chair', 'Secretary']);
-  exportFile('Minutes-' + (m.date || 'meeting'), doc.build());
+  const att = (m.att || []).map(t => teacherName(t)).filter(Boolean);
+  const block = (label, text) => `<div class="sec"><div class="sh">${label}</div><div class="sb">${text ? esc(text).replace(/\n/g, '<br>') : '—'}</div></div>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Meeting minutes</title><style>
+    @page{size:A4;margin:16mm}
+    body{font-family:Arial,Helvetica,sans-serif;color:#14203B;margin:0;font-size:13px}
+    .hd{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #1B3A7A;padding-bottom:10px}
+    .hd img{width:72px;height:72px;object-fit:contain}
+    .sch{font-size:18px;font-weight:700;letter-spacing:.02em}
+    .sub{font-size:12px;color:#5C6B88;margin-top:3px}
+    .ttl{font-size:19px;font-weight:700;color:#1B3A7A;margin:18px 0 10px;text-transform:uppercase;letter-spacing:.06em}
+    table.meta{width:100%;border-collapse:collapse;font-size:13px}
+    table.meta td{border:1px solid #D7DEEC;padding:7px 9px;vertical-align:top}
+    table.meta td.k{width:22%;background:#F3F6FB;font-weight:700}
+    .sec{margin-top:16px;page-break-inside:avoid}
+    .sh{background:#1B3A7A;color:#fff;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;border-radius:4px 4px 0 0}
+    .sb{border:1px solid #D7DEEC;border-top:0;padding:10px;font-size:13px;line-height:1.6;min-height:40px;border-radius:0 0 4px 4px}
+    .signs{display:flex;justify-content:space-between;margin-top:48px;font-size:12px}
+    .signs div{width:40%;border-top:1px solid #14203B;padding-top:6px;text-align:center}
+    .ft{margin-top:26px;font-size:10px;color:#8A96AE;text-align:center}
+  </style></head><body>
+    <div class="hd"><div><div class="sch">${esc(DB.school || 'Milandhoo School')}</div><div class="sub">GEMS · Staff meetings</div></div><img src="data:image/png;base64,${RB_LOGO_B64}" alt="School logo"></div>
+    <div class="ttl">Meeting minutes</div>
+    <table class="meta">
+      <tr><td class="k">Meeting</td><td>${esc(m.title || '—')}</td><td class="k">Date</td><td>${esc(fmtD(m.date))}</td></tr>
+      <tr><td class="k">Time</td><td>${esc(m.time || '—')}</td><td class="k">Venue</td><td>${esc(m.venue || '—')}</td></tr>
+      <tr><td class="k">Chaired by</td><td colspan="3">${esc(m.chair || '—')}</td></tr>
+      <tr><td class="k">Attendees</td><td colspan="3">${att.length ? esc(att.join(', ')) : '—'}</td></tr>
+    </table>
+    ${block('Agenda', m.agenda)}${block('Minutes', m.minutes)}${block('Decisions and actions', m.decisions)}
+    <div class="signs"><div>Chair</div><div>Secretary</div></div>
+    <div class="ft">Printed from GEMS · ${esc(fmtD(today()))}</div>
+  </body></html>`;
+  rbPrintHtml(html);
 };
 (function () {
   Object.assign(TOP_TITLE, { meetings: 'Meetings', meetingNew: 'New meeting', meeting: 'Meeting minutes', meetingEdit: 'Edit meeting' });
