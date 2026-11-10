@@ -5517,14 +5517,26 @@ function sbSession() { try { return JSON.parse(localStorage.getItem(SB_SESSION_K
 function sbSaveSession(s) { try { localStorage.setItem(SB_SESSION_KEY, JSON.stringify(s)); } catch (e) { } }
 function sbBase() { return ((DB.cloud && DB.cloud.url) || '').replace(/\/+$/, ''); }
 function sbKey() { return (DB.cloud && DB.cloud.key) || ''; }
-async function sbReq(path, o = {}) {
+async function sbRefresh() {
+  const sess = sbSession();
+  if (!sess || !sess.refresh) throw new Error('Sign in again');
+  const r = await fetch(sbBase() + '/auth/v1/token?grant_type=refresh_token', { method: 'POST', headers: { apikey: sbKey(), 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: sess.refresh }) });
+  let data = null; try { data = await r.json(); } catch (e) { }
+  if (!r.ok || !data || !data.access_token) throw new Error('Sign in again');
+  sbSaveSession({ access: data.access_token, refresh: data.refresh_token || sess.refresh, uid: (data.user && data.user.id) || sess.uid, email: sess.email });
+}
+async function sbReq(path, o = {}, retry = true) {
   const sess = sbSession();
   const headers = sbHeaders(sbKey(), sess && sess.access);
   headers['Content-Type'] = 'application/json';
   if (o.prefer) headers.Prefer = o.prefer;
   const r = await fetch(sbBase() + path, { method: o.method || 'GET', headers, body: o.body ? JSON.stringify(o.body) : undefined });
   let data = null; try { data = await r.json(); } catch (e) { }
-  if (!r.ok) { const err = new Error((data && (data.msg || data.message || data.error_description)) || ('HTTP ' + r.status)); err.status = r.status; throw err; }
+  if (!r.ok) {
+    const msg = (data && (data.msg || data.message || data.error_description)) || '';
+    if (retry && sess && sess.refresh && (r.status === 401 || /JWT/i.test(msg))) { await sbRefresh(); return sbReq(path, o, false); }
+    const err = new Error(msg || ('HTTP ' + r.status)); err.status = r.status; throw err;
+  }
   return data;
 }
 async function sbAuth(kind, email, password) {
