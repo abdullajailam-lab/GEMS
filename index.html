@@ -1178,6 +1178,18 @@ textarea{font-size:16px!important;width:100%;border:1px solid var(--line);border
 .mv-pt{display:grid;grid-template-columns:28px 1fr;gap:10px;padding:10px 0;border-top:1px solid var(--line);font-size:14px;line-height:1.5}
 .mv-pt:first-of-type{border-top:0}
 .mv-pt span{width:26px;height:26px;border-radius:50%;background:#EAF1FB;color:var(--navy);font-weight:700;font-size:12px;display:grid;place-items:center}
+/* ==================== Meeting view and attendee chips ==================== */
+.mv-card{padding:4px 16px}
+.mv-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);font-size:14px}
+.mv-row:last-child{border-bottom:0}
+.mv-k{color:var(--muted);font-weight:600}
+.mv-v{font-weight:700;color:var(--ink);text-align:right}
+.att-wrap{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.att-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:#EEF3FB;color:var(--navy);font-size:13px;font-weight:600}
+.ext-chip{background:#FFF6E0;color:#7A5B0A}
+.att-x{border:0;background:none;color:inherit;font-size:16px;line-height:1;padding:0 0 0 2px}
+.mv-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.mv-actions .btn{flex:0 0 auto}
 </style>
 </head>
 
@@ -7425,18 +7437,18 @@ ACT.pnGoal = d => {
 ACT.twEdit = () => { keepForm(); S.twEdit = true; render(); };
 ACT.twAuto = () => { keepForm(); S.twEdit = false; render(); };
 
-/* ==================== Meetings and minutes: date, time, venue, attendees and minutes (points added one by one). Printed with the school logo and the Leading teacher signature. ==================== */
+/* ==================== Meetings and minutes: attendees (teachers and other participants), minutes points, real PDF export, print with logo ==================== */
 const MEETING_LEADER = 'Ibrahim Azim';
 function mList() { if (!DB.meetings) DB.meetings = []; return DB.meetings; }
 function mBlank() { return { id: '', title: '', date: today(), time: '', venue: '', att: [], points: [] }; }
+function attName(x) { return String(x).startsWith('ext:') ? String(x).slice(4) : (teacherName(x) || ''); }
+function mAttNames(m) { return (m.att || []).map(attName).filter(Boolean); }
+function mPoints(m) { return (m.points || (m.minutes ? m.minutes.split('\n') : [])).filter(p => (p || '').trim()); }
 function mCurrent(id) {
   if (!S.mDraft || S.mDraft.key !== id) {
     const saved = id === 'new' ? null : mList().find(m => m.id === id);
     const base = mBlank();
-    if (saved) {
-      Object.assign(base, JSON.parse(JSON.stringify(saved)));
-      base.points = saved.points || (saved.minutes ? saved.minutes.split('\n') : []);
-    }
+    if (saved) { Object.assign(base, JSON.parse(JSON.stringify(saved))); base.points = mPoints(saved); }
     S.mDraft = Object.assign(base, { key: id });
   }
   return S.mDraft;
@@ -7458,7 +7470,9 @@ function vMeetings() {
 }
 function vMeetingForm(id) {
   const d = mCurrent(id);
-  const names = DB.teachers.map(t => `<button class="pn-chip ${d.att.includes(t.id) ? 'on' : ''}" data-a="mAtt" data-v="${t.id}"><span class="pn-tick">${d.att.includes(t.id) ? '✓' : ''}</span><span>${esc(t.name)}</span></button>`).join('') || '<div class="sub">Add teachers first.</div>';
+  const teacherChips = DB.teachers.map(t => { const on = d.att.includes(t.id); return `<button class="pn-chip ${on ? 'on' : ''}" data-a="mAtt" data-v="${t.id}"><span class="pn-tick">${on ? '✓' : ''}</span><span>${esc(t.name)}</span></button>`; }).join('') || '<div class="sub">Add teachers first.</div>';
+  const extras = d.att.filter(x => String(x).startsWith('ext:'));
+  const extraChips = extras.map(x => `<span class="att-chip ext-chip">${esc(attName(x))}<button class="att-x" data-a="mExtDel" data-v="${esc(x)}" aria-label="Remove">×</button></span>`).join('');
   const points = d.points.length ? d.points : [''];
   const pointRows = points.map((p, i) => `<div class="mp-row"><span class="mp-n">${i + 1}</span><input data-mp="${i}" value="${esc(p)}" placeholder="Write the point"><button class="mp-x" data-a="mpDel" data-v="${i}" aria-label="Remove point">×</button></div>`).join('');
   return `<div class="between"><h1>${id === 'new' ? 'New meeting' : 'Edit meeting'}</h1></div>
@@ -7466,9 +7480,12 @@ function vMeetingForm(id) {
     <label class="f">Meeting title<input id="f_mt" value="${esc(d.title)}" placeholder="e.g. Staff meeting"></label>
     <div class="pn-two"><label class="f">Date<input id="f_md" type="date" value="${esc(d.date)}"></label><label class="f">Time<input id="f_mtime" value="${esc(d.time)}" placeholder="e.g. 2:00 PM"></label></div>
     <label class="f">Venue<input id="f_mv" value="${esc(d.venue)}" placeholder="e.g. Staff room"></label>
-    <div class="f" style="margin-top:12px">Attendees <span class="sub">(${d.att.length} chosen)</span></div>
-    <div class="pn-grid" style="margin-bottom:12px">${names}</div>
-    <div class="f" style="margin-top:12px">Minutes</div>
+    <div class="f" style="margin-top:14px">Teachers attending <span class="sub">(${d.att.filter(x => !String(x).startsWith('ext:')).length} chosen)</span></div>
+    <div class="pn-grid" style="margin-bottom:12px">${teacherChips}</div>
+    <div class="f" style="margin-top:6px">Other participants</div>
+    <div class="att-wrap" style="margin:6px 0 8px">${extraChips || '<span class="sub">None added.</span>'}</div>
+    <div class="row" style="gap:8px"><input id="f_mext" placeholder="Type a name, e.g. Parent or guest" style="flex:1;min-width:0"><button class="btn ghost sm" data-a="mAddExt">Add</button></div>
+    <div class="f" style="margin-top:16px">Minutes</div>
     <div class="mp-list">${pointRows}</div>
     <button class="btn ghost sm" data-a="mpAdd" style="margin-top:8px">+ Add point</button>
     <div style="margin-top:16px"><button class="btn full" data-a="mSave">Save meeting</button></div>
@@ -7477,19 +7494,35 @@ function vMeetingForm(id) {
 function vMeetingView(id) {
   const m = mList().find(x => x.id === id);
   if (!m) return '<div class="empty">This meeting was not found.</div>';
-  const att = (m.att || []).map(t => teacherName(t)).filter(Boolean);
-  const pts = m.points || (m.minutes ? m.minutes.split('\n') : []);
-  const minutesHtml = pts.filter(p => (p || '').trim()).map((p, i) => `<div class="mv-pt"><span>${i + 1}</span><div>${esc(p)}</div></div>`).join('') || '<span class="sub">No minutes recorded.</span>';
+  const names = mAttNames(m);
+  const pts = mPoints(m);
+  const minutesHtml = pts.map((p, i) => `<div class="mv-pt"><span>${i + 1}</span><div>${esc(p)}</div></div>`).join('') || '<span class="sub">No minutes recorded.</span>';
+  const chips = names.map(n => `<span class="att-chip">${esc(n)}</span>`).join('') || '<span class="sub">None recorded.</span>';
   return `<div class="between"><h1>${esc(m.title || 'Meeting')}</h1></div>
-  <div class="card" style="margin-bottom:10px">
-    <div class="sub">${esc(fmtD(m.date))}${m.time ? ' · ' + esc(m.time) : ''}${m.venue ? ' · ' + esc(m.venue) : ''}</div>
-    <div class="f" style="margin-top:12px">Attendees (${att.length})</div>
-    <div class="mtext">${att.length ? esc(att.join(', ')) : '<span class="sub">None recorded.</span>'}</div>
+  <div class="card mv-card">
+    <div class="mv-row"><span class="mv-k">Date</span><span class="mv-v">${esc(fmtD(m.date))}</span></div>
+    <div class="mv-row"><span class="mv-k">Time</span><span class="mv-v">${esc(m.time || '—')}</span></div>
+    <div class="mv-row"><span class="mv-k">Venue</span><span class="mv-v">${esc(m.venue || '—')}</span></div>
   </div>
-  <div class="card" style="margin-bottom:10px"><div class="f" style="margin-top:0">Minutes</div>${minutesHtml}</div>
-  <div class="row" style="gap:8px;margin-top:6px"><button class="btn ghost sm" data-a="stack" data-v="meetingEdit:${m.id}">Edit</button><button class="btn ghost sm" data-a="mPdf" data-v="${m.id}">Export PDF</button><button class="btn ghost sm" data-a="mDel" data-v="${m.id}">Delete</button></div>`;
+  <div class="card" style="margin-top:10px"><div class="f" style="margin-top:0">Attendees (${names.length})</div><div class="att-wrap" style="margin-top:6px">${chips}</div></div>
+  <div class="card" style="margin-top:10px"><div class="f" style="margin-top:0">Minutes</div>${minutesHtml}</div>
+  <div class="mv-actions">
+    <button class="btn ghost sm" data-a="stack" data-v="meetingEdit:${m.id}">Edit</button>
+    <button class="btn sm" data-a="mPdf" data-v="${m.id}">Export PDF</button>
+    <button class="btn ghost sm" data-a="mPrint" data-v="${m.id}">Print with logo</button>
+    <button class="btn ghost sm" data-a="mDel" data-v="${m.id}">Delete</button>
+  </div>`;
 }
 ACT.mAtt = d => { mKeep(); const s = S.mDraft; const i = s.att.indexOf(d.v); if (i >= 0) s.att.splice(i, 1); else s.att.push(d.v); render(); };
+ACT.mAddExt = () => {
+  mKeep();
+  const el = document.getElementById('f_mext'); const v = ((el && el.value) || '').trim();
+  if (!v) return toast('Type the participant name first.');
+  const key = 'ext:' + v;
+  if (!S.mDraft.att.includes(key)) S.mDraft.att.push(key);
+  render();
+};
+ACT.mExtDel = d => { mKeep(); S.mDraft.att = S.mDraft.att.filter(x => x !== d.v); render(); };
 ACT.mpAdd = () => { mKeep(); S.mDraft.points.push(''); render(); };
 ACT.mpDel = d => { mKeep(); S.mDraft.points.splice(Number(d.v), 1); if (!S.mDraft.points.length) S.mDraft.points = ['']; render(); };
 ACT.mSave = () => {
@@ -7512,17 +7545,28 @@ ACT.mDel = d => {
   if (sbActive()) sbReq('/rest/v1/gems_meetings?id=eq.' + encodeURIComponent(d.v), { method: 'DELETE' }).catch(() => { });
   S.stack.pop(); toast('Meeting deleted'); render();
 };
+/* Export PDF: a real PDF file that is saved to the device */
 ACT.mPdf = d => {
   const m = mList().find(x => x.id === d.v); if (!m) return toast('Meeting not found.');
-  const att = (m.att || []).map(t => teacherName(t)).filter(Boolean);
-  const pts = (m.points || (m.minutes ? m.minutes.split('\n') : [])).filter(p => (p || '').trim());
+  const doc = new PdfDoc({ title: 'Meeting minutes', sub: (m.title || 'Meeting') + ' · ' + fmtD(m.date), brand: PDF_BRAND() });
+  doc.section('Meeting details');
+  doc.meta([['Meeting', m.title || '—'], ['Date', fmtD(m.date)], ['Time', m.time || '—'], ['Venue', m.venue || '—'], ['Attendees', mAttNames(m).join(', ') || '—']]);
+  doc.section('Minutes');
+  const pts = mPoints(m);
+  doc.table([{ h: 'No.', w: 12, align: 'center' }, { h: 'Point', w: 88 }], pts.length ? pts.map((p, i) => [String(i + 1), p]) : [['—', 'No minutes recorded.']]);
+  doc.sign([MEETING_LEADER]);
+  exportFile('Minutes-' + (m.date || 'meeting'), doc.build());
+};
+/* Print with logo: the school logo and layout, saved with the print dialog */
+function meetingHtml(m) {
+  const pts = mPoints(m);
   const minutesRows = pts.length ? pts.map((p, i) => `<tr><td class="no">${i + 1}</td><td>${esc(p)}</td></tr>`).join('') : '<tr><td class="no">—</td><td>No minutes recorded.</td></tr>';
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Meeting minutes</title><style>
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Meeting minutes</title><style>
     @page{size:A4;margin:16mm}
     body{font-family:Arial,Helvetica,sans-serif;color:#14203B;margin:0;font-size:13px}
     .hd{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #1B3A7A;padding-bottom:10px}
     .hd img{width:72px;height:72px;object-fit:contain}
-    .sch{font-size:18px;font-weight:700;letter-spacing:.02em}
+    .sch{font-size:18px;font-weight:700}
     .sub{font-size:12px;color:#5C6B88;margin-top:3px}
     .ttl{font-size:19px;font-weight:700;color:#1B3A7A;margin:18px 0 10px;text-transform:uppercase;letter-spacing:.06em}
     table{width:100%;border-collapse:collapse;font-size:13px}
@@ -7541,14 +7585,17 @@ ACT.mPdf = d => {
     <table class="meta">
       <tr><td class="k">Meeting</td><td>${esc(m.title || '—')}</td><td class="k">Date</td><td>${esc(fmtD(m.date))}</td></tr>
       <tr><td class="k">Time</td><td>${esc(m.time || '—')}</td><td class="k">Venue</td><td>${esc(m.venue || '—')}</td></tr>
-      <tr><td class="k">Attendees</td><td colspan="3">${att.length ? esc(att.join(', ')) : '—'}</td></tr>
+      <tr><td class="k">Attendees</td><td colspan="3">${mAttNames(m).length ? esc(mAttNames(m).join(', ')) : '—'}</td></tr>
     </table>
     <div class="sh">Minutes</div>
     <table class="pts"><tbody>${minutesRows}</tbody></table>
     <div class="sign"><div class="line">Leading teacher</div><div class="nm">${esc(MEETING_LEADER)}</div></div>
     <div class="ft">Printed from GEMS · ${esc(fmtD(today()))}</div>
   </body></html>`;
-  rbPrintHtml(html);
+}
+ACT.mPrint = d => {
+  const m = mList().find(x => x.id === d.v); if (!m) return toast('Meeting not found.');
+  rbPrintHtml(meetingHtml(m));
 };
 (function () {
   Object.assign(TOP_TITLE, { meetings: 'Meetings', meetingNew: 'New meeting', meeting: 'Meeting minutes', meetingEdit: 'Edit meeting' });
