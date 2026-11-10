@@ -1162,6 +1162,9 @@ button.pn-sub{width:100%;font:inherit}
 /* ==================== Fixed width: nothing can make the page wider than the phone screen ==================== */
 html,body{max-width:100%;overflow-x:hidden;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 #app,#main,.app{max-width:100%}
+/* ==================== Meetings and minutes ==================== */
+.mtext{white-space:pre-wrap;font-size:14px;line-height:1.55;color:var(--ink)}
+textarea{font-size:16px!important;width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-family:inherit;resize:vertical;background:#fff}
 </style>
 </head>
 
@@ -5650,6 +5653,7 @@ async function sbPushAll() {
   const att = [];
   Object.keys(DB.att || {}).forEach(k => { const [date, cls] = k.split('|'); Object.keys(DB.att[k]).forEach(sid => att.push({ date, class_id: cls, student_id: sid, status: DB.att[k][sid] })); });
   await sbUpsert('gems_attendance', att, 'date,class_id,student_id');
+  await sbUpsert('gems_meetings', (DB.meetings || []).map(m => ({ id: m.id, title: m.title || '', meeting_date: m.date || '', time: m.time || '', venue: m.venue || '', chair: m.chair || '', attendee_ids: m.att || [], agenda: m.agenda || '', minutes: m.minutes || '', decisions: m.decisions || '' })), 'id');
   DB.cloudSyncedAt = new Date().toISOString(); sbSaveLocal();
 }
 async function sbPullAll() {
@@ -5659,11 +5663,14 @@ async function sbPullAll() {
     const [teachers, groups, students, attRows] = await Promise.all([
       sbReq('/rest/v1/gems_teachers?select=*'), sbReq('/rest/v1/gems_groups?select=*'),
       sbReq('/rest/v1/gems_students?select=*'), sbReq('/rest/v1/gems_attendance?select=*')]);
+    const meetingRows = await sbReq('/rest/v1/gems_meetings?select=*').catch(() => []);
     const mergeById = (list, rows, fromRow) => { (rows || []).forEach(r => { const i = list.findIndex(x => x.id === r.id); const o = fromRow(r); if (i >= 0) list[i] = o; else list.push(o); }); };
     mergeById(DB.teachers, teachers, r => ({ id: r.id, name: r.name, role: r.role || '' }));
     mergeById(DB.classes, groups, r => ({ id: r.id, name: r.name, tch: r.teacher_id || '' }));
     mergeById(DB.students, students, sbStudentFromRow);
     (attRows || []).forEach(r => { const k = r.date + '|' + r.class_id; DB.att[k] = DB.att[k] || {}; DB.att[k][r.student_id] = r.status; });
+    DB.meetings = DB.meetings || [];
+    (meetingRows || []).forEach(r => { const o = { id: r.id, title: r.title || '', date: r.meeting_date || '', time: r.time || '', venue: r.venue || '', chair: r.chair || '', att: r.attendee_ids || [], agenda: r.agenda || '', minutes: r.minutes || '', decisions: r.decisions || '' }; const i = DB.meetings.findIndex(x => x.id === r.id); if (i >= 0) DB.meetings[i] = o; else DB.meetings.push(o); });
     DB.cloudSyncedAt = new Date().toISOString(); sbSaveLocal();
   } finally { sbPulling = false; }
 }
@@ -7404,6 +7411,111 @@ ACT.pnGoal = d => {
 
 ACT.twEdit = () => { keepForm(); S.twEdit = true; render(); };
 ACT.twAuto = () => { keepForm(); S.twEdit = false; render(); };
+
+/* ==================== Meetings and minutes: record meetings, attendees, agenda, minutes and decisions; export to PDF ==================== */
+function mList() { if (!DB.meetings) DB.meetings = []; return DB.meetings; }
+function mBlank() { return { id: '', title: '', date: today(), time: '', venue: '', chair: '', att: [], agenda: '', minutes: '', decisions: '' }; }
+function mCurrent(id) {
+  if (!S.mDraft || S.mDraft.key !== id) {
+    const base = id === 'new' ? mBlank() : Object.assign(mBlank(), JSON.parse(JSON.stringify(mList().find(m => m.id === id) || mBlank())));
+    S.mDraft = Object.assign(base, { key: id });
+  }
+  return S.mDraft;
+}
+function mKeep() {
+  const d = S.mDraft; if (!d) return;
+  [['title', 'f_mt'], ['date', 'f_md'], ['time', 'f_mtime'], ['venue', 'f_mv'], ['chair', 'f_mc'], ['agenda', 'f_mag'], ['minutes', 'f_mmin'], ['decisions', 'f_mdec']].forEach(([k, el]) => {
+    const e = document.getElementById(el); if (e) d[k] = e.value;
+  });
+}
+function vMeetings() {
+  const list = mList().slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const rows = list.map(m => `<div class="card" style="margin-bottom:10px"><div class="li" data-a="stack" data-v="meeting:${m.id}"><div class="grow"><b>${esc(m.title || 'Meeting')}</b><div class="sub">${esc(fmtD(m.date))}${m.time ? ' · ' + esc(m.time) : ''} · ${(m.att || []).length} attended</div></div></div></div>`).join('');
+  return `<div class="between"><h1>Meetings</h1></div>
+  <div class="row" style="margin-bottom:12px"><button class="btn full" data-a="stack" data-v="meetingNew">New meeting</button></div>
+  ${list.length ? rows : '<div class="empty">No meetings recorded yet. Tap New meeting to add the minutes.</div>'}`;
+}
+function vMeetingForm(id) {
+  const d = mCurrent(id);
+  const names = DB.teachers.map(t => `<button class="pn-chip ${d.att.includes(t.id) ? 'on' : ''}" data-a="mAtt" data-v="${t.id}"><span class="pn-tick">${d.att.includes(t.id) ? '✓' : ''}</span><span>${esc(t.name)}</span></button>`).join('') || '<div class="sub">Add teachers first.</div>';
+  return `<div class="between"><h1>${id === 'new' ? 'New meeting' : 'Edit meeting'}</h1></div>
+  <div class="card">
+    <label class="f">Meeting title<input id="f_mt" value="${esc(d.title)}" placeholder="e.g. Staff meeting"></label>
+    <div class="pn-two"><label class="f">Date<input id="f_md" type="date" value="${esc(d.date)}"></label><label class="f">Time<input id="f_mtime" value="${esc(d.time)}" placeholder="e.g. 2:00 PM"></label></div>
+    <label class="f">Venue<input id="f_mv" value="${esc(d.venue)}" placeholder="e.g. Staff room"></label>
+    <label class="f">Chaired by<input id="f_mc" value="${esc(d.chair)}"></label>
+    <div class="f" style="margin-top:12px">Attendees <span class="sub">(${d.att.length} chosen)</span></div>
+    <div class="pn-grid" style="margin-bottom:12px">${names}</div>
+    <label class="f">Agenda<textarea id="f_mag" rows="3" placeholder="One item per line">${esc(d.agenda)}</textarea></label>
+    <label class="f">Minutes<textarea id="f_mmin" rows="6" placeholder="What was discussed">${esc(d.minutes)}</textarea></label>
+    <label class="f">Decisions and actions<textarea id="f_mdec" rows="4" placeholder="Decision or action, and who is responsible">${esc(d.decisions)}</textarea></label>
+    <div style="margin-top:14px"><button class="btn full" data-a="mSave">Save meeting</button></div>
+  </div>`;
+}
+function vMeetingView(id) {
+  const m = mList().find(x => x.id === id);
+  if (!m) return '<div class="empty">This meeting was not found.</div>';
+  const att = (m.att || []).map(t => teacherName(t)).filter(Boolean);
+  const block = (label, text) => `<div class="card" style="margin-bottom:10px"><div class="f" style="margin-top:0">${label}</div><div class="mtext">${text ? esc(text) : '<span class="sub">None recorded.</span>'}</div></div>`;
+  return `<div class="between"><h1>${esc(m.title || 'Meeting')}</h1></div>
+  <div class="card" style="margin-bottom:10px">
+    <div class="sub">${esc(fmtD(m.date))}${m.time ? ' · ' + esc(m.time) : ''}${m.venue ? ' · ' + esc(m.venue) : ''}</div>
+    ${m.chair ? `<div class="sub" style="margin-top:4px">Chaired by ${esc(m.chair)}</div>` : ''}
+    <div class="f" style="margin-top:12px">Attendees (${att.length})</div>
+    <div class="mtext">${att.length ? esc(att.join(', ')) : '<span class="sub">None recorded.</span>'}</div>
+  </div>
+  ${block('Agenda', m.agenda)}${block('Minutes', m.minutes)}${block('Decisions and actions', m.decisions)}
+  <div class="row" style="gap:8px;margin-top:6px"><button class="btn ghost sm" data-a="stack" data-v="meetingEdit:${m.id}">Edit</button><button class="btn ghost sm" data-a="mPdf" data-v="${m.id}">Export PDF</button><button class="btn ghost sm" data-a="mDel" data-v="${m.id}">Delete</button></div>`;
+}
+ACT.mAtt = d => { keepForm && mKeep(); const s = S.mDraft; const i = s.att.indexOf(d.v); if (i >= 0) s.att.splice(i, 1); else s.att.push(d.v); render(); };
+ACT.mSave = () => {
+  mKeep();
+  const s = S.mDraft;
+  if (!s || !(s.title || '').trim()) return toast('Enter a meeting title.');
+  if (!s.date) return toast('Choose the meeting date.');
+  const rec = { id: s.key === 'new' ? uid() : s.key, title: s.title.trim(), date: s.date, time: s.time || '', venue: s.venue || '', chair: s.chair || '', att: s.att.slice(), agenda: s.agenda || '', minutes: s.minutes || '', decisions: s.decisions || '' };
+  const list = mList(); const i = list.findIndex(m => m.id === rec.id);
+  if (i >= 0) list[i] = rec; else list.push(rec);
+  save(); S.mDraft = null;
+  S.stack.pop(); S.stack.push('meeting:' + rec.id);
+  toast('Meeting saved'); render();
+};
+ACT.mDel = d => {
+  if (!window.confirm('Delete this meeting and its minutes?')) return;
+  DB.meetings = mList().filter(m => m.id !== d.v); save();
+  if (sbActive()) sbReq('/rest/v1/gems_meetings?id=eq.' + encodeURIComponent(d.v), { method: 'DELETE' }).catch(() => { });
+  S.stack.pop(); toast('Meeting deleted'); render();
+};
+ACT.mPdf = d => {
+  const m = mList().find(x => x.id === d.v); if (!m) return toast('Meeting not found.');
+  const att = (m.att || []).map(t => teacherName(t)).filter(Boolean).join(', ');
+  const doc = new PdfDoc({ title: 'Meeting minutes', sub: (m.title || 'Meeting') + ' · ' + fmtD(m.date), brand: PDF_BRAND() });
+  doc.section('Meeting details');
+  doc.meta([['Title', m.title || '—'], ['Date', fmtD(m.date)], ['Time', m.time || '—'], ['Venue', m.venue || '—'], ['Chaired by', m.chair || '—'], ['Attendees', att || '—']]);
+  doc.section('Agenda'); doc.box(m.agenda || '—', {});
+  doc.section('Minutes'); doc.box(m.minutes || '—', {});
+  doc.section('Decisions and actions'); doc.box(m.decisions || '—', {});
+  doc.sign(['Chair', 'Secretary']);
+  exportFile('Minutes-' + (m.date || 'meeting'), doc.build());
+};
+(function () {
+  Object.assign(TOP_TITLE, { meetings: 'Meetings', meetingNew: 'New meeting', meeting: 'Meeting minutes', meetingEdit: 'Edit meeting' });
+  const prevRoute = routeMain;
+  routeMain = function () {
+    const c = cur();
+    if (c === 'meetings') return vMeetings();
+    if (c === 'meetingNew') return vMeetingForm('new');
+    if (c && c.startsWith('meetingEdit:')) return vMeetingForm(c.slice(12));
+    if (c && c.startsWith('meeting:')) return vMeetingView(c.slice(8));
+    const html = prevRoute();
+    if (!c && S.tab === 'more') {
+      const row = `<div class="card" style="margin-bottom:12px"><div class="li" data-a="stack" data-v="meetings"><div class="ico">${ico('check', 22)}</div><div class="grow"><b>Meetings and minutes</b><div class="sub">Record meetings, attendees, minutes and decisions, and export them as PDF</div></div></div></div>`;
+      const idx = html.indexOf('<div class="card');
+      return idx >= 0 ? html.slice(0, idx) + row + html.slice(idx) : row + html;
+    }
+    return html;
+  };
+})();
 
 /* ==================== Header, bottom bar, render, start ==================== */
 const NAV = [['home', 'Home', 'home'], ['students', 'Students', 'people'], ['attend', 'Attend', 'check'], ['tt', 'Timetable', 'grid'], ['more', 'More', 'dots']];
