@@ -7794,17 +7794,39 @@ function aprForStudent(name) {
   return DB.apl.find(r => aprNorm(r.name) === k) || null;
 }
 function aprStudentSection(r) {
+  const open = !S.aprMin;
+  const editing = S.aprEditId === r.id;
+  const head = `<div class="between" style="align-items:center"><div class="f" style="margin-top:14px">Academic performance</div><div class="row" style="gap:6px;margin-top:10px;margin-bottom:0"><button class="btn ghost sm" data-a="aprToggle">${open ? 'Minimise' : 'Open'}</button>${open && !editing ? `<button class="btn ghost sm" data-a="aprEdit" data-id="${r.id}">Edit</button>` : ''}</div></div>`;
+  if (!open) return head;
+  if (editing) {
+    return head + `<div class="card" style="margin-top:6px">${APR_SUBJECTS.map(s => `<div class="f" style="margin-top:12px">${s} <span class="sub">one point per line</span></div><textarea id="apr_t_${s}" rows="6" style="width:100%">${esc(((r.s && r.s[s]) || []).join('\n'))}</textarea>`).join('')}<div class="row" style="margin-top:12px"><button class="btn sm" data-a="aprSave" data-id="${r.id}">Save</button><button class="btn ghost sm" data-a="aprCancel">Cancel</button></div></div>`;
+  }
   const facts = [['Grade', r.g], ['Age', r.age], ['Index', r.idx], ['Programme', r.p]].filter(f => f[1]);
   const blocks = APR_SUBJECTS.map(s => {
     const b = (r.s && r.s[s]) || [];
     return b.length ? `<div class="f" style="margin-top:12px">${s}</div><ul style="margin:4px 0 0;padding-left:18px">${b.map(x => `<li style="margin:4px 0">${esc(x)}</li>`).join('')}</ul>` : '';
   }).join('');
-  return `<div class="f" style="margin-top:14px">Academic performance</div>
-  <div class="card" style="margin-top:6px"><div class="sub">${facts.map(([k, v]) => `${k}: <b>${esc(v)}</b>`).join(' · ')}</div>
+  return head + `<div class="card" style="margin-top:6px"><div class="sub">${facts.map(([k, v]) => `${k}: <b>${esc(v)}</b>`).join(' · ')}</div>
   ${blocks || '<div class="sub" style="margin-top:8px">No present levels recorded.</div>'}
   ${r.ck ? `<div class="sub" style="margin-top:8px">Checked by ${esc(r.ck)}, SEN Leading Teacher</div>` : ''}
   <div class="row" style="margin-top:10px"><button class="btn ghost sm" data-a="aprPdf" data-id="${r.id}">Export as PDF</button></div></div>`;
 }
+ACT.aprToggle = () => { S.aprMin = !S.aprMin; render(); };
+ACT.aprEdit = d => { S.aprEditId = d.id; render(); };
+ACT.aprCancel = () => { S.aprEditId = null; render(); };
+ACT.aprSave = d => {
+  const r = DB.apl.find(x => x.id === d.id);
+  if (!r) return;
+  r.s = r.s || {};
+  APR_SUBJECTS.forEach(s => {
+    const el = document.getElementById('apr_t_' + s);
+    if (el) r.s[s] = el.value.split('\n').map(x => x.trim()).filter(Boolean);
+  });
+  save();
+  S.aprEditId = null;
+  render();
+  toast('Academic performance saved');
+};
 (function () {
   const prevForm = vStudentForm;
   vStudentForm = function (id) {
