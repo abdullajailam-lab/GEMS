@@ -1197,7 +1197,7 @@ body input, body textarea, body select, body [contenteditable="true"] { -webkit-
 
 /* report books list (new layout) */
 .rbx-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
-.rbx-tile{background:#fff;border:1px solid #E3E9F3;border-radius:16px;padding:12px;text-align:center}
+.rbx-tile{font:inherit;cursor:pointer;background:#fff;border:1px solid #E3E9F3;border-radius:16px;padding:12px;text-align:center}
 .rbx-tile b{display:block;font-size:22px;color:#0D2B5A}.rbx-tile span{font-size:12px;color:#5B6B85}
 .rbx-search{width:100%;box-sizing:border-box;border:1px solid #D7E0EE;border-radius:14px;padding:12px 14px;font-size:16px;background:#fff;margin-bottom:10px}
 .rbx-chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:6px;-webkit-overflow-scrolling:touch}
@@ -1951,7 +1951,7 @@ function vStudentForm(id) {
   </div>
   <div class="card">
     <div class="between"><h2 style="margin:0">Learning goals (ICP): ${esc(d.name || s.name || '')}</h2><span class="tag">${d.goals.length} selected</span></div>
-    <div class="sub" style="margin-top:4px">Dhivehi: ${d.goals.map(gid => indById(gid)).filter(x => x && x.subj === 'Dhivehi').length} · app version 15 Nov 22:00</div>
+    <div class="sub" style="margin-top:4px">Dhivehi: ${d.goals.map(gid => indById(gid)).filter(x => x && x.subj === 'Dhivehi').length} · app version 15 Nov 22:15</div>
     <div class="goalbox" style="margin-top:10px">${chosen.length ? chosen.map(x => `<button class="gchip" data-a="goalTog" data-v="${x.id}"><i></i>${esc(shortT(x.text))}<span>×</span></button>`).join('') : '<div class="sub">No goals yet.</div>'}</div>
     <details class="gp"><summary>Choose goals from all indicators</summary><div class="gl">${groups}</div></details>
     <label class="f">Notes for these goals<textarea id="f_note">${esc(s.note)}</textarea></label>
@@ -8170,37 +8170,70 @@ function rbxFilter(q) {
   document.querySelectorAll('.rbx-row').forEach(el => { el.style.display = !q || el.dataset.n.includes(q) ? '' : 'none'; });
   document.querySelectorAll('.rbx-group').forEach(g => { g.style.display = [...g.querySelectorAll('.rbx-row')].some(r => r.style.display !== 'none') ? '' : 'none'; });
 }
+function rbxTeacherMap() {
+  const map = {};
+  try {
+    const d = typeof actualDistributionPlan === 'function' ? actualDistributionPlan() : null;
+    if (d && d.plan) d.plan.forEach(p => (p.list || []).forEach(st => { map[st.id] = p.t.id; }));
+  } catch (e) { }
+  DB.students.forEach(st => { if (!map[st.id]) { const t = (typeof teacherOfStudent === 'function' ? teacherOfStudent(st) : null) || (st.tch && tchOf(st.tch) ? st.tch : null); if (t) map[st.id] = t; } });
+  return map;
+}
 function vReportBooksNew() {
   const short = { Mathematics: 'Maths', English: 'English', Dhivehi: 'Dhivehi' };
-  const all = DB.students.slice();
+  const tmap = rbxTeacherMap();
+  const isSaved = st => !!(((DB.rb || {})[st.id] || {}).savedAt);
+  const everyone = DB.students.slice();
+  const tch = S.rbTch || '';
+  const byTeacher = everyone.filter(st => !tch || (tch === '_none' ? !tmap[st.id] : tmap[st.id] === tch));
+  const all = S.rbSaved ? byTeacher.filter(isSaved) : byTeacher;
   const groups = {};
-  all.forEach(s => { const c = clsName(s.cls) || 'No class'; (groups[c] = groups[c] || []).push(s); });
+  all.forEach(st => { const c = clsName(st.cls) || 'No class'; (groups[c] = groups[c] || []).push(st); });
   const names = Object.keys(groups).sort((a, b) => { const x = rbxGradeKey(a), y = rbxGradeKey(b); return x[0] - y[0] || x[1].localeCompare(y[1]); });
   const pick = S.rbCls && groups[S.rbCls] ? S.rbCls : '';
-  let totR = 0, totT = 0, saved = 0;
-  all.forEach(s => { const c = rbxCounts(s.id); totR += c.rated; totT += c.total; if (((DB.rb || {})[s.id] || {}).savedAt) saved++; });
+  let totR = 0, totT = 0;
+  byTeacher.forEach(st => { const c = rbxCounts(st.id); totR += c.rated; totT += c.total; });
+  const savedN = byTeacher.filter(isSaved).length;
   const pct = totT ? Math.round(totR * 100 / totT) : 0;
-  const row = s => {
-    const c = rbxCounts(s.id), r = (DB.rb || {})[s.id] || {}, p = c.total ? Math.round(c.rated * 100 / c.total) : 0;
-    const pill = !c.total ? '<span class="rbx-pill empty">No indicators</span>' : r.savedAt ? '<span class="rbx-pill saved">Saved</span>' : `<span class="rbx-pill prog">${p}%</span>`;
+  const row = st => {
+    const c = rbxCounts(st.id), r = (DB.rb || {})[st.id] || {}, p = c.total ? Math.round(c.rated * 100 / c.total) : 0;
+    const t = tchOf(tmap[st.id]);
+    const when = r.savedAt ? new Date(r.savedAt).toLocaleDateString([], { day: 'numeric', month: 'short' }) : '';
+    const pill = !c.total ? '<span class="rbx-pill empty">No indicators</span>' : r.savedAt ? `<span class="rbx-pill saved">Saved ${esc(when)}</span>` : `<span class="rbx-pill prog">${p}%</span>`;
     const subs = c.subs.length ? c.subs.map(x => `<span class="rbx-s ${x.sb === 'Dhivehi' ? 'dv' : x.sb === 'Mathematics' ? 'ma' : ''}">${short[x.sb] || esc(x.sb)} ${x.n}/${x.t}</span>`).join('') : '<span class="rbx-s none">No indicators yet</span>';
-    return `<div class="rbx-row" data-a="stack" data-v="reportbook:${s.id}" data-n="${esc(s.name.toLowerCase())}">
-      <div class="rbx-av" style="background:${levelColor(s.level)}">${esc(initials(s.name))}</div>
-      <div class="rbx-main"><b>${esc(s.name)}</b><div class="rbx-subs">${subs}</div>${c.total ? `<div class="rbx-bar"><i style="width:${p}%"></i></div>` : ''}</div>
+    return `<div class="rbx-row" data-a="stack" data-v="reportbook:${st.id}" data-n="${esc(st.name.toLowerCase())}">
+      <div class="rbx-av" style="background:${levelColor(st.level)}">${esc(initials(st.name))}</div>
+      <div class="rbx-main"><b>${esc(st.name)}</b>${t && !tch ? `<div class="sub" style="font-size:12.5px">${esc(t.name)}</div>` : ''}<div class="rbx-subs">${subs}</div>${c.total ? `<div class="rbx-bar"><i style="width:${p}%"></i></div>` : ''}</div>
       ${pill}</div>`;
   };
   const shown = pick ? [pick] : names;
+  const visible = shown.flatMap(n => groups[n]);
+  S.rbxIds = visible.map(st => st.id);
+  const tcount = id => everyone.filter(st => tmap[st.id] === id).length;
+  const none = everyone.filter(st => !tmap[st.id]).length;
   return `<div class="between"><h1>Report books</h1></div>
   <div class="sub">Grouped by class. Tap a student to rate, save or print.</div>
-  <div class="rbx-tiles"><div class="rbx-tile"><b>${all.length}</b><span>Students</span></div><div class="rbx-tile"><b>${pct}%</b><span>Rated</span></div><div class="rbx-tile"><b>${saved}</b><span>Saved</span></div></div>
+  <label class="f" style="margin-top:12px">Teacher<select onchange="S.rbTch=this.value;S.rbCls='';render()">
+    <option value="">All teachers (${everyone.length})</option>
+    ${DB.teachers.map(t => `<option value="${t.id}" ${tch === t.id ? 'selected' : ''}>${esc(t.name)} (${tcount(t.id)})</option>`).join('')}
+    ${none ? `<option value="_none" ${tch === '_none' ? 'selected' : ''}>Not assigned (${none})</option>` : ''}
+  </select></label>
+  <div class="rbx-tiles">
+    <button class="rbx-tile" data-a="rbxSaved" data-v="0" style="${S.rbSaved ? '' : 'border-color:#0D2B5A;box-shadow:0 0 0 2px #0D2B5A inset'}"><b>${byTeacher.length}</b><span>Students</span></button>
+    <div class="rbx-tile"><b>${pct}%</b><span>Rated</span></div>
+    <button class="rbx-tile" data-a="rbxSaved" data-v="1" style="${S.rbSaved ? 'background:#E5F6EC;border-color:#16794A;box-shadow:0 0 0 2px #16794A inset' : ''}"><b>${savedN}</b><span>Saved</span></button>
+  </div>
+  ${S.rbSaved ? `<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:#E5F6EC;border-color:#BFE6CF"><div><b style="color:#16794A">Saved report books</b><div class="sub">${savedN} saved${tch ? ' for this teacher' : ''}</div></div><button class="btn ghost sm" data-a="rbxSaved" data-v="0">Show all</button></div>` : ''}
   <input class="rbx-search" type="search" placeholder="Search a student" oninput="rbxFilter(this.value)">
   <div class="rbx-chips"><button class="rbx-chip ${pick ? '' : 'on'}" data-a="rbxCls" data-v="">All</button>${names.map(n => `<button class="rbx-chip ${pick === n ? 'on' : ''}" data-a="rbxCls" data-v="${esc(n)}">${esc(n)}</button>`).join('')}</div>
-  ${shown.map(n => { const l = groups[n].sort((a, b) => a.name.localeCompare(b.name)); let r = 0, t = 0; l.forEach(s => { const c = rbxCounts(s.id); r += c.rated; t += c.total; });
-    return `<div class="rbx-group"><div class="rbx-gh"><b>${esc(n)}</b><span>${l.length} student${l.length === 1 ? '' : 's'} · ${t ? Math.round(r * 100 / t) : 0}% rated</span></div><div class="card" style="padding:0">${l.map(row).join('')}</div></div>`; }).join('') || '<div class="empty">No students yet.</div>'}
-  <div class="row" style="margin:16px 0"><button class="btn full" data-a="rbAll" ${all.length ? '' : 'disabled'}>${ico('pdf', 18)}Print all ${all.length} report books</button></div>`;
+  ${shown.map(n => { const l = groups[n].sort((a, b) => a.name.localeCompare(b.name)); let r = 0, t = 0; l.forEach(st => { const c = rbxCounts(st.id); r += c.rated; t += c.total; });
+    return `<div class="rbx-group"><div class="rbx-gh"><b>${esc(n)}</b><span>${l.length} student${l.length === 1 ? '' : 's'} · ${t ? Math.round(r * 100 / t) : 0}% rated</span></div><div class="card" style="padding:0">${l.map(row).join('')}</div></div>`; }).join('') || `<div class="empty">${S.rbSaved ? 'No saved report books yet. Open a student and tap Save report book.' : 'No students for this teacher.'}</div>`}
+  <div class="row" style="margin:16px 0"><button class="btn full" data-a="rbxPrint" ${visible.length ? '' : 'disabled'}>${ico('pdf', 18)}Print ${S.rbSaved ? 'saved' : 'these'} ${visible.length} report book${visible.length === 1 ? '' : 's'}</button></div>`;
 }
 function rbxHook() {
   ACT.rbxCls = d => { S.rbCls = d.v; render(); };
+  ACT.rbxSaved = d => { S.rbSaved = d.v === '1'; S.rbCls = ''; render(); window.scrollTo(0, 0); };
+  ACT.rbxPrint = () => { if ((S.rbxIds || []).length) rbPrint(S.rbxIds.slice()); };
   vReportBooks = vReportBooksNew;
 }
 /* ==================== Student details from the Gems Register 2026 (name spelling, Dhivehi name, index, NID, address, parent, contact, profile, programme) ==================== */
