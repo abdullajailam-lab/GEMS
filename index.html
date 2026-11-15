@@ -7821,32 +7821,83 @@ function aprStudentSection(r) {
     return at >= 0 ? h.slice(0, at) + section + h.slice(at) : h + section;
   };
 })();
-/* ==================== One-time automatic import: add the performance students and put them in grade groups ==================== */
-function aprAutoImport() {
-  if (!DB || DB.aplImported === 'v1') return;
+/* ==================== Removing students: the delete goes to the cloud and is remembered, so pulls and imports do not bring them back ==================== */
+const SB_REMOVED = 'gems_removed_students';
+function aprRemovedLocal() { DB.removedStudents = DB.removedStudents || []; return DB.removedStudents; }
+async function aprCloudRemove(rec) {
+  await sbUpsert(SB_REMOVED, [{ id: rec.id, name: rec.n }], 'id');
+  await sbReq('/rest/v1/gems_attendance?student_id=eq.' + encodeURIComponent(rec.id), { method: 'DELETE' });
+  await sbReq('/rest/v1/gems_students?id=eq.' + encodeURIComponent(rec.id), { method: 'DELETE' });
+}
+(function () {
+  const prevDel = ACT.stDel;
+  ACT.stDel = d => {
+    const st = DB.students.find(s => s.id === d.v);
+    const before = DB.students.length;
+    prevDel(d);
+    if (!st || DB.students.length === before) return;
+    const rec = { id: st.id, n: aprNorm(st.name), synced: false };
+    aprRemovedLocal().push(rec);
+    save();
+    if (sbActive()) aprCloudRemove(rec).then(() => { rec.synced = true; save(); }).catch(() => { });
+  };
+})();
+function aprImport(removedIds, removedNames) {
   aprEnsure();
+  DB.classes = DB.classes || [];
   const have = new Set(DB.students.map(s => aprNorm(s.name)));
+  const newStudents = [], newGroups = [];
   DB.apl.forEach(r => {
     const k = aprNorm(r.name);
-    if (!k || have.has(k)) return;
+    if (!k || have.has(k) || removedNames.has(k) || removedIds.has('apr_' + k)) return;
     have.add(k);
-    DB.students.push({ id: uid(), name: r.name, cls: '', tch: '', level: DB.levels[1] || DB.levels[0] || '', need: '', goals: [], guardian: '', phone: '', note: '' });
+    const st = { id: 'apr_' + k, name: r.name, cls: '', tch: '', level: DB.levels[1] || DB.levels[0] || '', need: '', goals: [], guardian: '', phone: '', note: '' };
+    DB.students.push(st); newStudents.push(st);
   });
-  DB.classes = DB.classes || [];
   DB.apl.forEach(r => {
     if (!r.g) return;
     const st = DB.students.find(s => aprNorm(s.name) === aprNorm(r.name));
-    if (!st) return;
+    if (!st || removedIds.has(st.id)) return;
     let cl = DB.classes.find(c => aprNorm(c.name) === aprNorm(r.g));
-    if (!cl) { cl = { id: uid(), name: r.g, tch: '' }; DB.classes.push(cl); }
+    if (!cl) { cl = { id: uid(), name: r.g, tch: '' }; DB.classes.push(cl); newGroups.push(cl); }
     if (st.cls !== cl.id) st.cls = cl.id;
   });
-  DB.aplImported = 'v1';
+  DB.aplImported = 'v2';
   save();
+  if (sbActive() && (newStudents.length || newGroups.length)) {
+    sbUpsert('gems_groups', newGroups.map(g => ({ id: g.id, name: g.name, teacher_id: g.tch || '' })), 'id')
+      .then(() => sbUpsert('gems_students', newStudents.map(sbStudentRow), 'id')).catch(() => { });
+  }
+  return newStudents.length;
+}
+async function aprAfterPull() {
+  if (!sbActive()) return;
+  let cloudRows = [];
+  try { cloudRows = (await sbReq('/rest/v1/' + SB_REMOVED + '?select=id,name')) || []; } catch (e) { return; }
+  const local = aprRemovedLocal();
+  for (const rec of local) {
+    if (!rec.synced) { try { await aprCloudRemove(rec); rec.synced = true; } catch (e) { } }
+  }
+  const removedIds = new Set([...cloudRows.map(r => r.id), ...local.map(r => r.id)]);
+  const removedNames = new Set([...cloudRows.map(r => r.name), ...local.map(r => r.n)].filter(Boolean));
+  const before = DB.students.length;
+  DB.students = DB.students.filter(s => !removedIds.has(s.id));
+  if (DB.students.length !== before) save();
+  if (DB.aplImported !== 'v2') aprImport(removedIds, removedNames);
 }
 (function () {
-  const prevRoute = routeMain;
-  routeMain = function () { aprAutoImport(); return prevRoute(); };
+  const prevPull = sbPullAll;
+  sbPullAll = async function () { await prevPull(); await aprAfterPull(); };
+  const prevSync = sbSync;
+  sbSync = async function () { await prevSync(); await aprAfterPull(); };
+  ACT.aprAddStudents = () => {
+    aprEnsure();
+    const removedIds = new Set(aprRemovedLocal().map(r => r.id));
+    const removedNames = new Set(aprRemovedLocal().map(r => r.n));
+    const n = aprImport(removedIds, removedNames);
+    render();
+    toast(n ? `Added ${n} student${n === 1 ? '' : 's'}` : 'All of these students are already in your list');
+  };
 })();
 
 function boot() {
