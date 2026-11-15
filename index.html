@@ -1194,6 +1194,28 @@ textarea{font-size:16px!important;width:100%;border:1px solid var(--line);border
 /* stop tap/long-press from selecting page text on phones; typing fields stay selectable */
 html, body, body * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 body input, body textarea, body select, body [contenteditable="true"] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+
+/* report books list (new layout) */
+.rbx-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
+.rbx-tile{background:#fff;border:1px solid #E3E9F3;border-radius:16px;padding:12px;text-align:center}
+.rbx-tile b{display:block;font-size:22px;color:#0D2B5A}.rbx-tile span{font-size:12px;color:#5B6B85}
+.rbx-search{width:100%;box-sizing:border-box;border:1px solid #D7E0EE;border-radius:14px;padding:12px 14px;font-size:16px;background:#fff;margin-bottom:10px}
+.rbx-chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:6px;-webkit-overflow-scrolling:touch}
+.rbx-chip{flex:0 0 auto;border:1px solid #D7E0EE;background:#fff;color:#0D2B5A;border-radius:999px;padding:7px 14px;font-weight:600;font-size:14px}
+.rbx-chip.on{background:#0D2B5A;color:#fff;border-color:#0D2B5A}
+.rbx-group{margin-top:16px}
+.rbx-gh{display:flex;justify-content:space-between;align-items:baseline;padding:0 4px 8px;color:#0D2B5A}
+.rbx-gh b{font-size:17px}.rbx-gh span{font-size:13px;color:#5B6B85}
+.rbx-row{display:flex;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid #EEF2F8;cursor:pointer}
+.rbx-row:last-child{border-bottom:0}
+.rbx-av{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:15px;flex:0 0 auto}
+.rbx-main{flex:1;min-width:0}.rbx-main b{display:block;font-size:15.5px;color:#0D2B5A;line-height:1.25}
+.rbx-subs{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.rbx-s{font-size:11.5px;font-weight:600;border-radius:8px;padding:3px 7px;background:#EEF4FF;color:#1E4FA8}
+.rbx-s.dv{background:#E8F7F4;color:#0F7A63}.rbx-s.ma{background:#FFF4E5;color:#A05A00}.rbx-s.none{background:#F1F3F7;color:#7A869A}
+.rbx-bar{height:6px;border-radius:6px;background:#E9EEF6;overflow:hidden}.rbx-bar i{display:block;height:100%;background:linear-gradient(90deg,#22B8E6,#1E4FA8)}
+.rbx-pill{flex:0 0 auto;font-size:11.5px;font-weight:700;border-radius:999px;padding:4px 9px}
+.rbx-pill.saved{background:#E5F6EC;color:#16794A}.rbx-pill.prog{background:#EEF4FF;color:#1E4FA8}.rbx-pill.empty{background:#F1F3F7;color:#7A869A}
 </style>
 </head>
 
@@ -1929,7 +1951,7 @@ function vStudentForm(id) {
   </div>
   <div class="card">
     <div class="between"><h2 style="margin:0">Learning goals (ICP): ${esc(d.name || s.name || '')}</h2><span class="tag">${d.goals.length} selected</span></div>
-    <div class="sub" style="margin-top:4px">Dhivehi: ${d.goals.map(gid => indById(gid)).filter(x => x && x.subj === 'Dhivehi').length} · app version 15 Nov 21:15</div>
+    <div class="sub" style="margin-top:4px">Dhivehi: ${d.goals.map(gid => indById(gid)).filter(x => x && x.subj === 'Dhivehi').length} · app version 15 Nov 21:30</div>
     <div class="goalbox" style="margin-top:10px">${chosen.length ? chosen.map(x => `<button class="gchip" data-a="goalTog" data-v="${x.id}"><i></i>${esc(shortT(x.text))}<span>×</span></button>`).join('') : '<div class="sub">No goals yet.</div>'}</div>
     <details class="gp"><summary>Choose goals from all indicators</summary><div class="gl">${groups}</div></details>
     <label class="f">Notes for these goals<textarea id="f_note">${esc(s.note)}</textarea></label>
@@ -8126,6 +8148,60 @@ function rbSaveHook() {
       <div class="sub" style="flex:0 0 auto;text-align:right">${when ? 'Last saved<br>' + esc(when) : 'Not saved yet'}</div></div>`;
   };
 }
+/* ==================== Report books list: grouped by Class / Grade, search, class filter, per-subject progress, saved status ==================== */
+function rbxCounts(id) {
+  const r = rbOf(id), out = { subs: [], rated: 0, total: 0 };
+  RB_SUBJ.forEach(sb => {
+    const l = rbList(r, sb); if (!l.length) return;
+    const rt = (r.ratings || {})[sb] || {};
+    const n = l.filter((t, i) => rt[i]).length;
+    out.subs.push({ sb, n, t: l.length }); out.rated += n; out.total += l.length;
+  });
+  return out;
+}
+function rbxGradeKey(name) {
+  const g = String(name || '').toUpperCase().replace(/\s+/g, '');
+  if (/^LKG/.test(g)) return [0, g]; if (/^UKG/.test(g)) return [1, g];
+  const m = g.match(/^(\d+)/); return m ? [1 + +m[1], g] : [99, g];
+}
+function rbxFilter(q) {
+  q = String(q || '').toLowerCase().trim();
+  document.querySelectorAll('.rbx-row').forEach(el => { el.style.display = !q || el.dataset.n.includes(q) ? '' : 'none'; });
+  document.querySelectorAll('.rbx-group').forEach(g => { g.style.display = [...g.querySelectorAll('.rbx-row')].some(r => r.style.display !== 'none') ? '' : 'none'; });
+}
+function vReportBooksNew() {
+  const short = { Mathematics: 'Maths', English: 'English', Dhivehi: 'Dhivehi' };
+  const all = DB.students.slice();
+  const groups = {};
+  all.forEach(s => { const c = clsName(s.cls) || 'No class'; (groups[c] = groups[c] || []).push(s); });
+  const names = Object.keys(groups).sort((a, b) => { const x = rbxGradeKey(a), y = rbxGradeKey(b); return x[0] - y[0] || x[1].localeCompare(y[1]); });
+  const pick = S.rbCls && groups[S.rbCls] ? S.rbCls : '';
+  let totR = 0, totT = 0, saved = 0;
+  all.forEach(s => { const c = rbxCounts(s.id); totR += c.rated; totT += c.total; if (((DB.rb || {})[s.id] || {}).savedAt) saved++; });
+  const pct = totT ? Math.round(totR * 100 / totT) : 0;
+  const row = s => {
+    const c = rbxCounts(s.id), r = (DB.rb || {})[s.id] || {}, p = c.total ? Math.round(c.rated * 100 / c.total) : 0;
+    const pill = !c.total ? '<span class="rbx-pill empty">No indicators</span>' : r.savedAt ? '<span class="rbx-pill saved">Saved</span>' : `<span class="rbx-pill prog">${p}%</span>`;
+    const subs = c.subs.length ? c.subs.map(x => `<span class="rbx-s ${x.sb === 'Dhivehi' ? 'dv' : x.sb === 'Mathematics' ? 'ma' : ''}">${short[x.sb] || esc(x.sb)} ${x.n}/${x.t}</span>`).join('') : '<span class="rbx-s none">No indicators yet</span>';
+    return `<div class="rbx-row" data-a="stack" data-v="reportbook:${s.id}" data-n="${esc(s.name.toLowerCase())}">
+      <div class="rbx-av" style="background:${levelColor(s.level)}">${esc(initials(s.name))}</div>
+      <div class="rbx-main"><b>${esc(s.name)}</b><div class="rbx-subs">${subs}</div>${c.total ? `<div class="rbx-bar"><i style="width:${p}%"></i></div>` : ''}</div>
+      ${pill}</div>`;
+  };
+  const shown = pick ? [pick] : names;
+  return `<div class="between"><h1>Report books</h1></div>
+  <div class="sub">Grouped by class. Tap a student to rate, save or print.</div>
+  <div class="rbx-tiles"><div class="rbx-tile"><b>${all.length}</b><span>Students</span></div><div class="rbx-tile"><b>${pct}%</b><span>Rated</span></div><div class="rbx-tile"><b>${saved}</b><span>Saved</span></div></div>
+  <input class="rbx-search" type="search" placeholder="Search a student" oninput="rbxFilter(this.value)">
+  <div class="rbx-chips"><button class="rbx-chip ${pick ? '' : 'on'}" data-a="rbxCls" data-v="">All</button>${names.map(n => `<button class="rbx-chip ${pick === n ? 'on' : ''}" data-a="rbxCls" data-v="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+  ${shown.map(n => { const l = groups[n].sort((a, b) => a.name.localeCompare(b.name)); let r = 0, t = 0; l.forEach(s => { const c = rbxCounts(s.id); r += c.rated; t += c.total; });
+    return `<div class="rbx-group"><div class="rbx-gh"><b>${esc(n)}</b><span>${l.length} student${l.length === 1 ? '' : 's'} · ${t ? Math.round(r * 100 / t) : 0}% rated</span></div><div class="card" style="padding:0">${l.map(row).join('')}</div></div>`; }).join('') || '<div class="empty">No students yet.</div>'}
+  <div class="row" style="margin:16px 0"><button class="btn full" data-a="rbAll" ${all.length ? '' : 'disabled'}>${ico('pdf', 18)}Print all ${all.length} report books</button></div>`;
+}
+function rbxHook() {
+  ACT.rbxCls = d => { S.rbCls = d.v; render(); };
+  vReportBooks = vReportBooksNew;
+}
 function dvHash(s) { let h = 5381; for (const c of s) h = ((h << 5) + h + c.charCodeAt(0)) >>> 0; return h.toString(36); }
 function dvRemoved(id) { DB.dvRemoved = DB.dvRemoved || {}; return DB.dvRemoved[id] || (DB.dvRemoved[id] = []); }
 function dvOwn(st) {
@@ -8192,7 +8268,7 @@ function dvHook() {
   const prevAfter = aprAfterPull;
   aprAfterPull = async function () { await prevAfter(); try { let c = false; try { c = await rbCloudPull(); } catch (e) { } const f = oneTimeFixes(), a = regClassApply(), b = dvEnsure(); if (a || b || f || c) render(); } catch (e) { console.warn('dvEnsure', e); } };
   const prevBoot = boot;
-  boot = function () { prevBoot.apply(this, arguments); try { dvHook(); rbSaveHook(); document.addEventListener('selectstart', e => { const t = e.target && e.target.nodeType === 3 ? e.target.parentElement : e.target; if (!(t && t.closest && t.closest('input,textarea,select,[contenteditable="true"]'))) e.preventDefault(); }); const f = oneTimeFixes(), a = regClassApply(), b = dvEnsure(); if (a || b || f) render(); } catch (e) { console.warn('dvEnsure', e); } };
+  boot = function () { prevBoot.apply(this, arguments); try { dvHook(); rbSaveHook(); rbxHook(); document.addEventListener('selectstart', e => { const t = e.target && e.target.nodeType === 3 ? e.target.parentElement : e.target; if (!(t && t.closest && t.closest('input,textarea,select,[contenteditable="true"]'))) e.preventDefault(); }); const f = oneTimeFixes(), a = regClassApply(), b = dvEnsure(); if (a || b || f) render(); } catch (e) { console.warn('dvEnsure', e); } };
 })();
 (function () {
   const prevPick = vPick;
