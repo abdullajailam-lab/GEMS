@@ -1989,7 +1989,7 @@ function vStudentForm(id) {
   </div>
   <div class="card">
     <div class="between"><h2 style="margin:0">Learning goals (ICP): ${esc(d.name || s.name || '')}</h2><span class="tag">${d.goals.length} selected</span></div>
-    <div class="sub" style="margin-top:4px">Dhivehi: ${d.goals.map(gid => indById(gid)).filter(x => x && x.subj === 'Dhivehi').length} · app version 16 Nov 12:20</div>
+    <div class="sub" style="margin-top:4px">Dhivehi: ${d.goals.map(gid => indById(gid)).filter(x => x && x.subj === 'Dhivehi').length} · app version 16 Nov 13:10</div>
     <div class="goalbox" style="margin-top:10px">${chosen.length ? chosen.map(x => `<button class="gchip" data-a="goalTog" data-v="${x.id}"><i></i>${esc(shortT(x.text))}<span>×</span></button>`).join('') : '<div class="sub">No goals yet.</div>'}</div>
     <details class="gp"><summary>Choose goals from all indicators</summary><div class="gl">${groups}</div></details>
     <label class="f">Notes for these goals<textarea id="f_note">${esc(s.note)}</textarea></label>
@@ -7419,6 +7419,7 @@ ACT.pnCreate = () => {
   sids.forEach(id => { if (p.stuOff && p.stuOff[id] && p.stuOff[id].length) pl.stuOff[id] = p.stuOff[id].slice(); });
   pl.topic = p.topic || ''; pl.week = p.week || ''; pl.quarter = p.quarter || ''; pl.assess = p.assess || PLAN_DEFAULTS.assess; pl.res = p.res || PLAN_DEFAULTS.res;
   pl.kind = p.kind === 'weekly' ? 'weekly' : 'daily';
+  if (p.subjs && p.subjs.length > 1) { pl.subjs = p.subjs.slice(); pl.subj = p.subjs.join(' + '); }
   pl.dateTo = pl.kind === 'daily' ? p.date : planDateTo(p.date);
   if (p.tid) { pl.tid = p.tid; pl.title = (p.topic || pl.title || 'Lesson plan') + ' · ' + (teacherName(p.tid) || 'Teacher'); }
   DB.plans.push(pl); save(); S.draft = null; S.stack.pop(); S.stack.push('plan:' + pl.id);
@@ -7509,10 +7510,11 @@ vPlanNew = function () {
 ACT.pnIndToggle = () => { keepForm(); S.pnIndOpen = !S.pnIndOpen; render(); };
 ACT.pnKind = d => { keepForm(); S.draft.plan.kind = d.v; render(); };
 /* ==================== Lesson plan wizard: 4 easy steps ==================== */
-function pwSubjGoals(st, subj) { return (st.goals || []).filter(id => { const x = indById(id); return x && x.subj === subj; }); }
+function pwSubjs(d) { return (d.subjs && d.subjs.length) ? d.subjs : [d.subj]; }
+function pwSubjGoals(st, subj) { const list = Array.isArray(subj) ? subj : [subj]; return (st.goals || []).filter(id => { const x = indById(id); return x && list.includes(x.subj); }); }
 function pwTicked(d, st) {
   const off = (d.stuOff || {})[st.id] || [], goff = (d.goalOff || {})[st.id] || (st.goals || []);
-  return (d.inds || []).filter(id => !off.includes(id)).length + pwSubjGoals(st, d.subj).filter(id => !goff.includes(id)).length;
+  return (d.inds || []).filter(id => !off.includes(id)).length + pwSubjGoals(st, pwSubjs(d)).filter(id => !goff.includes(id)).length;
 }
 function pwGroup(d) { return d.tid ? teacherStudents(d.tid) : studentsIn(d.cls); }
 vPlanNew = function () {
@@ -7534,8 +7536,8 @@ vPlanNew = function () {
       <label class="f" style="margin-top:14px">${d.kind === 'weekly' ? 'Week starts on' : 'Date'}<input id="f_pd" type="date" value="${d.date}" onchange="keepForm();render()"></label>
       <div class="pw-q">Teacher</div>
       ${DB.teachers.length ? `<div class="pn-row">${DB.teachers.map(t => `<button class="chip ${t.id === d.tid ? 'on' : ''}" data-a="pwTid" data-v="${t.id}">${esc(t.name)}</button>`).join('')}</div>` : '<div class="sub">Add teachers first.</div>'}
-      <div class="pw-q">Subject</div>
-      <div class="pn-row">${DB.subjects.map(x => `<button class="chip ${x === d.subj ? 'on' : ''}" data-a="pnSubj" data-v="${esc(x)}">${esc(x)}</button>`).join('')}</div>`;
+      <div class="pw-q">Subjects <span class="sub" style="font-weight:600">tap one or more</span></div>
+      <div class="pn-row">${DB.subjects.map(x => `<button class="chip ${pwSubjs(d).includes(x) ? 'on' : ''}" data-a="pwSubj" data-v="${esc(x)}">${pwSubjs(d).includes(x) ? '✓ ' : ''}${esc(x)}</button>`).join('')}</div>`;
   } else if (step === 2) {
     const rows = group.map(st => {
       const av = planAvailability(st.id, d.date);
@@ -7543,7 +7545,11 @@ vPlanNew = function () {
       const on = d.sids.includes(st.id);
       return `<button class="pw-stu ${on ? 'on' : ''}" data-a="pnSid" data-v="${st.id}"><span class="pw-box">${on ? '✓' : ''}</span><span class="pw-nm">${esc(st.name)}</span><span class="sub" style="font-size:12px">${esc(clsName(st.cls) || '')}</span></button>`;
     }).join('') || '<div class="empty">No students for this teacher.</div>';
+    const attDay = (d.kind === 'weekly' && today() >= d.date && today() <= planDateTo(d.date)) ? today() : d.date;
+    const locked = group.filter(st => !planAvailability(st.id, d.date).ok).length;
     body = `<div class="pw-q">Who is in this lesson? <span class="sub" style="font-weight:600">${chosen.length} chosen</span></div>
+      <div class="sub" style="margin:-4px 0 8px">Attendance checked for <b>${esc(fmtD(attDay))}</b>. Only students marked Present or Late can be added.</div>
+      ${locked ? `<div class="pn-row" style="margin-bottom:8px"><button class="btn ghost sm" data-a="pwAttRefresh">↻ Refresh attendance</button><button class="btn ghost sm" data-a="pwAttOpen">Open attendance</button></div>` : ''}
       <div class="pn-row" style="margin-bottom:10px"><button class="btn ghost sm" data-a="pnSidAll">Select all</button><button class="btn ghost sm" data-a="pnSidNone">Clear</button></div>
       <div class="card" style="padding:0;overflow:hidden">${rows}</div>
       <div class="sub" style="margin-top:8px">Students marked absent, or not marked in attendance, can't be added.</div>`;
@@ -7553,19 +7559,19 @@ vPlanNew = function () {
       const n = pwTicked(d, st), open = S.pwOpen === st.id;
       const off = d.stuOff[st.id] || [], goff = d.goalOff[st.id] || [];
       const items = (d.inds || []).map(id => { const x = indById(id); if (!x) return ''; const on = !off.includes(id); return `<button class="pw-ind ${on ? 'on' : ''}" data-a="pnStuInd" data-s="${st.id}" data-i="${id}"><span class="pw-box">${on ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`; }).join('')
-        + pwSubjGoals(st, d.subj).map(id => { const x = indById(id); const on = !goff.includes(id); return `<button class="pw-ind ${on ? 'on' : ''}" data-a="pnGoal" data-s="${st.id}" data-i="${id}"><span class="pw-box">${on ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`; }).join('');
+        + pwSubjs(d).map(sb => { const g = pwSubjGoals(st, sb); if (!g.length) return ''; return (pwSubjs(d).length > 1 ? `<div class="sub" style="padding:8px 14px 4px;font-weight:800;color:#0D2B5A;border-top:1px solid #EEF2F8">${esc(sb)}</div>` : '') + g.map(id => { const x = indById(id); const on = !goff.includes(id); return `<button class="pw-ind ${on ? 'on' : ''}" data-a="pnGoal" data-s="${st.id}" data-i="${id}"><span class="pw-box">${on ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`; }).join(''); }).join('');
       return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">
         <button class="pw-stu" data-a="pwOpen" data-v="${st.id}"><span class="pn-av">${esc(initials(st.name))}</span><span class="pw-nm">${esc(st.name)}</span><span class="pw-tag ${n ? '' : 'zero'}">${n} ticked</span><span>${open ? '▴' : '▾'}</span></button>
-        ${open ? (items ? items + `<div class="pw-mini"><button class="btn ghost sm" data-a="pwAll" data-s="${st.id}">Tick all</button><button class="btn ghost sm" data-a="pwNone" data-s="${st.id}">Clear</button></div>` : `<div class="sub" style="padding:12px 14px">No ${esc(d.subj)} indicators for this student. Use "Add other indicators" below.</div>`) : ''}
+        ${open ? (items ? items + `<div class="pw-mini"><button class="btn ghost sm" data-a="pwAll" data-s="${st.id}">Tick all</button><button class="btn ghost sm" data-a="pwNone" data-s="${st.id}">Clear</button></div>` : `<div class="sub" style="padding:12px 14px">No ${esc(pwSubjs(d).join(', '))} indicators for this student. Use "Add other indicators" below.</div>`) : ''}
       </div>`;
     }).join('');
-    const extra = [...IND, ...DB.custom].filter(x => x.subj === d.subj);
+    const extra = [...IND, ...DB.custom].filter(x => pwSubjs(d).includes(x.subj));
     body = `<div class="pw-q">Tick what each student will work on</div>
-      <div class="sub" style="margin:-4px 0 10px">Showing ${esc(d.subj)} indicators only. Nothing is ticked until you tick it.</div>
+      <div class="sub" style="margin:-4px 0 10px">Showing ${esc(pwSubjs(d).join(', '))} indicators. Nothing is ticked until you tick it.</div>
       <div class="pn-row" style="margin-bottom:10px"><button class="btn ghost sm" data-a="pwAllEveryone">Tick all for everyone</button><button class="btn ghost sm" data-a="pnIndClearAll">Clear everyone</button></div>
       ${cards || '<div class="empty">Choose students first.</div>'}
       <button class="lnk" data-a="pnIndToggle" style="margin-top:4px">${S.pnIndOpen ? 'Hide other indicators' : '+ Add other indicators for everyone'}</button>
-      ${S.pnIndOpen ? `<div class="card" style="padding:0;overflow:hidden;margin-top:8px">${extra.map(x => { const on = d.inds.includes(x.id); return `<button class="pw-ind ${on ? 'on' : ''}" data-a="pnInd" data-v="${x.id}"><span class="pw-box">${on ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`; }).join('') || `<div class="sub" style="padding:12px 14px">No other ${esc(d.subj)} indicators.</div>`}</div>` : ''}`;
+      ${S.pnIndOpen ? `<div class="card" style="padding:0;overflow:hidden;margin-top:8px">${extra.map(x => { const on = d.inds.includes(x.id); return `<button class="pw-ind ${on ? 'on' : ''}" data-a="pnInd" data-v="${x.id}"><span class="pw-box">${on ? '✓' : ''}</span><span>${esc(x.text)}</span></button>`; }).join('') || `<div class="sub" style="padding:12px 14px">No other indicators for these subjects.</div>`}</div>` : ''}`;
   } else {
     const tw = dayInfo(d.date || today());
     if (!S.twEdit) { d.quarter = tw.term ? 'Term ' + tw.term.n : ''; d.week = tw.term ? 'Week ' + tw.week : ''; }
@@ -7581,7 +7587,7 @@ vPlanNew = function () {
       <div class="pw-q">Summary</div>
       <div class="card">
         <div class="pw-sum"><span>Plan</span><b>${d.kind === 'weekly' ? 'Weekly · ' + esc(fmtShort(d.date)) + ' – ' + esc(fmtShort(planDateTo(d.date))) : 'Daily · ' + esc(fmtShort(d.date))}</b></div>
-        <div class="pw-sum"><span>Teacher · Subject</span><b>${esc(teacherName(d.tid) || '—')} · ${esc(d.subj)}</b></div>
+        <div class="pw-sum"><span>Teacher · Subjects</span><b>${esc(teacherName(d.tid) || '—')} · ${esc(pwSubjs(d).join(', '))}</b></div>
         ${chosen.map(st => { const n = pwTicked(d, st); return `<div class="pw-sum"><span>${esc(st.name)}</span><b style="color:${n ? '#0D2B5A' : '#A65A00'}">${n} indicator${n === 1 ? '' : 's'}</b></div>`; }).join('')}
       </div>`;
   }
@@ -7600,9 +7606,12 @@ ACT.pwNext = () => {
   if (step === 3 && !chosen.some(st => pwTicked(p, st))) return toast('Tick at least one indicator.');
   p.step = step + 1; render(); window.scrollTo(0, 0);
 };
-ACT.pwAll = d => { keepForm(); const p = S.draft.plan, st = DB.students.find(x => x.id === d.s); if (!st) return; const mine = pwSubjGoals(st, p.subj); p.goalOff[d.s] = (st.goals || []).filter(id => !mine.includes(id)); p.stuOff[d.s] = []; render(); };
+ACT.pwAll = d => { keepForm(); const p = S.draft.plan, st = DB.students.find(x => x.id === d.s); if (!st) return; const mine = pwSubjGoals(st, pwSubjs(p)); p.goalOff[d.s] = (st.goals || []).filter(id => !mine.includes(id)); p.stuOff[d.s] = []; render(); };
 ACT.pwNone = d => { keepForm(); const p = S.draft.plan, st = DB.students.find(x => x.id === d.s); if (!st) return; p.goalOff[d.s] = (st.goals || []).slice(); p.stuOff[d.s] = (p.inds || []).slice(); render(); };
-ACT.pwAllEveryone = () => { keepForm(); const p = S.draft.plan; (p.sids || []).forEach(id => { const st = DB.students.find(x => x.id === id); if (!st) return; const mine = pwSubjGoals(st, p.subj); p.goalOff[id] = (st.goals || []).filter(g => !mine.includes(g)); p.stuOff[id] = []; }); render(); };
+ACT.pwAllEveryone = () => { keepForm(); const p = S.draft.plan; (p.sids || []).forEach(id => { const st = DB.students.find(x => x.id === id); if (!st) return; const mine = pwSubjGoals(st, pwSubjs(p)); p.goalOff[id] = (st.goals || []).filter(g => !mine.includes(g)); p.stuOff[id] = []; }); render(); };
+ACT.pwSubj = d => { keepForm(); const p = S.draft.plan; let list = pwSubjs(p).slice(); if (list.includes(d.v)) { if (list.length > 1) list = list.filter(x => x !== d.v); } else list.push(d.v); p.subjs = list; p.subj = list[0]; render(); };
+ACT.pwAttRefresh = () => { keepForm(); toast('Checking attendance…'); (typeof sbPullAll === 'function' ? sbPullAll() : Promise.resolve()).then(() => { render(); toast('Attendance updated'); }).catch(() => { render(); }); };
+ACT.pwAttOpen = () => { keepForm(); const p = S.draft.plan; S.date = p.date; S.attT = p.tid || S.attT; S.stack = []; S.tab = 'attend'; render(); window.scrollTo(0, 0); toast('Mark attendance, then come back to New lesson plan.'); };
 ACT.plKind = d => { S.plKind = d.v; render(); };
 (function () {
   const basePlans = vPlans;
@@ -7682,17 +7691,17 @@ ACT.allStPdf = () => {
 
 /* ==================== Lesson plans: attendance decides who can be planned that day. Present (P or Late L) is available; Absent or Mainstream is frozen. ==================== */
 function attMarkOn(sid, date) {
-  let mark = null;
-  Object.keys(DB.att || {}).forEach(k => {
-    if (mark || !k.startsWith(date + '|')) return;
-    const m = (DB.att[k] || {})[sid];
-    if (m) mark = m;
-  });
-  return mark;
+  const marks = [];
+  Object.keys(DB.att || {}).forEach(k => { if (!k.startsWith(date + '|')) return; const m = (DB.att[k] || {})[sid]; if (m) marks.push(m); });
+  if (!marks.length) return null;
+  return ['P', 'L', 'M', 'A'].find(x => marks.includes(x)) || marks[0];
 }
 function planAvailability(sid, date) {
+  const dp = S.draft && S.draft.plan;
+  if (dp && dp.date === date && dp.kind === 'weekly') { const t = today(), end = planDateTo(date); if (t >= date && t <= end) date = t; }
   const m = attMarkOn(sid, date);
   if (m === 'P' || m === 'L') return { ok: true, why: '' };
+  if (!m && date > today()) return { ok: true, why: '' };
   if (m === 'A') return { ok: false, why: 'Absent' };
   if (m === 'M') return { ok: false, why: 'Mainstream' };
   return { ok: false, why: 'Not marked' };
@@ -8404,6 +8413,49 @@ function offHook() {
   const prevPlan = vPlanNew;
   vPlanNew = function () { const h = prevPlan.apply(this, arguments); const p = S.draft && S.draft.plan; const w = p && offDayWhy(p.date); if (!w) return h; const b = `<div class="off-banner">🔒<div>${esc(fmtShort(p.date))} is ${esc(w)}<br><span>Lesson plans can't be saved on Fridays, Saturdays, holidays or breaks. Pick a school day.</span></div></div>`; const i = h.indexOf('<div class="pw-steps">'); return i >= 0 ? h.slice(0, i) + b + h.slice(i) : b + h; };
 }
+/* ==================== Lesson plans in the database (gems_plans): every saved, edited or deleted plan is shared ==================== */
+function plHash(o) { const t = JSON.stringify(o); let h = 5381; for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) >>> 0; return h.toString(36); }
+let plSyncBusy = false;
+async function plSync() {
+  if (plSyncBusy || !(typeof sbActive === 'function' && sbActive())) return false;
+  plSyncBusy = true;
+  try {
+    DB.planSync = DB.planSync || {};
+    const now = new Date().toISOString(), rows = [], marks = {};
+    (DB.plans || []).forEach(pl => { const h = plHash(pl); if (DB.planSync[pl.id] !== h) { rows.push({ id: pl.id, data: pl, deleted: false, updated_at: now }); marks[pl.id] = h; } });
+    const ids = new Set((DB.plans || []).map(pl => pl.id));
+    Object.keys(DB.planSync).forEach(id => { if (!ids.has(id) && DB.planSync[id] !== 'deleted') { rows.push({ id, data: {}, deleted: true, updated_at: now }); marks[id] = 'deleted'; } });
+    if (!rows.length) return true;
+    await sbUpsert('gems_plans', rows, 'id');
+    Object.assign(DB.planSync, marks); sbSaveLocal ? sbSaveLocal() : save();
+    return true;
+  } catch (e) { return false; } finally { plSyncBusy = false; }
+}
+async function plPull() {
+  if (!(typeof sbActive === 'function' && sbActive())) return false;
+  const rows = await sbReq('/rest/v1/gems_plans?select=*').catch(() => null);
+  if (!Array.isArray(rows)) return false;
+  DB.planSync = DB.planSync || {};
+  let any = false;
+  rows.forEach(row => {
+    if (!row || !row.id) return;
+    const i = (DB.plans || []).findIndex(pl => pl.id === row.id), local = i >= 0 ? DB.plans[i] : null;
+    const localClean = !local || DB.planSync[row.id] === plHash(local);
+    if (row.deleted) {
+      if (local && localClean) { DB.plans.splice(i, 1); any = true; }
+      if (!local || localClean) DB.planSync[row.id] = 'deleted';
+      return;
+    }
+    const h = plHash(row.data);
+    if (DB.planSync[row.id] === h) return;
+    if (local && !localClean && DB.planSync[row.id] !== undefined) return;
+    if (!local && DB.planSync[row.id] === 'deleted') return;
+    if (local) DB.plans[i] = row.data; else (DB.plans = DB.plans || []).push(row.data);
+    DB.planSync[row.id] = h; any = true;
+  });
+  if (any || rows.length) sbSaveLocal();
+  return any;
+}
 function rbxHook() {
   ACT.rbxCls = d => { S.rbCls = d.v; render(); };
   ACT.rbxSaved = d => { S.rbSaved = d.v === '1'; S.rbCls = ''; render(); window.scrollTo(0, 0); };
@@ -8495,9 +8547,9 @@ function dvHook() {
 }
 (function () {
   const prevAfter = aprAfterPull;
-  aprAfterPull = async function () { await prevAfter(); try { let c = false; try { c = await rbCloudPull(); } catch (e) { } const g = regInfoApply(), f = oneTimeFixes() || g, a = regClassApply(), b = dvEnsure(); if (a || b || f || c) render(); } catch (e) { console.warn('dvEnsure', e); } };
+  aprAfterPull = async function () { await prevAfter(); try { let c = false; try { c = await rbCloudPull(); } catch (e) { } try { if (await plPull()) c = true; plSync(); } catch (e) { } const g = regInfoApply(), f = oneTimeFixes() || g, a = regClassApply(), b = dvEnsure(); if (a || b || f || c) render(); } catch (e) { console.warn('dvEnsure', e); } };
   const prevBoot = boot;
-  boot = function () { prevBoot.apply(this, arguments); try { dvHook(); rbSaveHook(); rbxHook(); offHook(); /*sel*/document.addEventListener('selectstart', e => { const t = e.target && e.target.nodeType === 3 ? e.target.parentElement : e.target; if (!(t && t.closest && t.closest('input,textarea,select,[contenteditable="true"]'))) e.preventDefault(); }); const g = regInfoApply(), f = oneTimeFixes() || g, a = regClassApply(), b = dvEnsure(); if (a || b || f) render(); } catch (e) { console.warn('dvEnsure', e); } };
+  boot = function () { prevBoot.apply(this, arguments); try { dvHook(); rbSaveHook(); rbxHook(); offHook(); const prevPush = sbPushAll; sbPushAll = async function () { const r = await prevPush.apply(this, arguments); await plSync(); return r; }; setTimeout(() => { plSync(); }, 1500); /*sel*/document.addEventListener('selectstart', e => { const t = e.target && e.target.nodeType === 3 ? e.target.parentElement : e.target; if (!(t && t.closest && t.closest('input,textarea,select,[contenteditable="true"]'))) e.preventDefault(); }); const g = regInfoApply(), f = oneTimeFixes() || g, a = regClassApply(), b = dvEnsure(); if (a || b || f) render(); } catch (e) { console.warn('dvEnsure', e); } };
 })();
 (function () {
   const prevPick = vPick;
